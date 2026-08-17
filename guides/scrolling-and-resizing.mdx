@@ -24,7 +24,7 @@ void ReserveScroll(int height, int scrollbar_color,
 | Parameter | Description |
 |---|---|
 | `height` | Total virtual canvas height in pixels. Must be greater than the window height passed to `CreateWindow`. |
-| `scrollbar_color` | Palette color index for the scrollbar thumb and track. Pass `-1` to render the scrollbar invisibly (scrolling still works). |
+| `scrollbar_color` | Packed two-nibble palette color: the lower nibble (`& 0xF`) is the track background color; the upper nibble (`>> 4`) is the thumb color. For example, `0x7F` gives a light-gray track (7) and a white thumb (F). Pass `-1` to render the scrollbar invisibly (scrolling still works). |
 | `Scroll` | Callback invoked each time the scroll offset changes. Receives the new scroll offset in pixels as its only argument. Pass `NULL` if you don't need the notification. |
 
 ```c
@@ -32,8 +32,8 @@ void on_scroll(int offset) {
     printf("Scrolled to y=%d\n", offset);
 }
 
-// 2000px virtual height, light-gray scrollbar
-ReserveScroll(2000, CLR_LGRAY, on_scroll);
+// 2000px virtual height; track = CLR_GRAY (8), thumb = CLR_LGRAY (7) → packed 0x78
+ReserveScroll(2000, 0x78, on_scroll);
 CreateWindow(640, 480, "Scroll Demo", CLR_BLACK);
 ```
 
@@ -68,7 +68,7 @@ void on_frame(int tick, float dt) {
 
 The scrollbar occupies a fixed **9-pixel wide** strip on the right edge of the window. The thumb height is proportional to `win_h / virtual_height`, so it shrinks as the virtual canvas gets taller relative to the viewport. The thumb's vertical position tracks the current scroll offset.
 
-Setting `scrollbar_color = -1` makes the scrollbar invisible while keeping scroll functionality intact — useful if you want to draw a custom scrollbar using immediate-mode or canvas primitives.
+Setting `scrollbar_color` to any negative value (e.g. `-1`) makes the scrollbar invisible while keeping scroll functionality intact — useful if you want to draw a custom scrollbar using immediate-mode or canvas primitives.
 
 ---
 
@@ -104,8 +104,8 @@ EnableResizing(on_resize);
 When both `ReserveScroll` and `EnableResizing` are active, the window height can grow — but it is automatically capped at the virtual canvas height. This prevents the viewport from exceeding the canvas, which would expose uninitialized back-buffer pixels.
 
 ```c
-// Virtual canvas is 1500px tall
-ReserveScroll(1500, CLR_LGRAY, NULL);
+// Virtual canvas is 1500px tall; track = CLR_GRAY (8), thumb = CLR_LGRAY (7) → packed 0x78
+ReserveScroll(1500, 0x78, NULL);
 CreateWindow(640, 480, "Scroll + Resize", CLR_BLACK);
 EnableResizing(on_resize);
 // Window can grow up to 1500px tall; scrollbar disappears at that point
@@ -160,7 +160,7 @@ void on_frame(int tick, float dt) {
 }
 
 int main(void) {
-    ReserveScroll(ITEM_COUNT * ITEM_H + 30, CLR_LGRAY, NULL);
+    ReserveScroll(ITEM_COUNT * ITEM_H + 30, 0x78, NULL);
     CreateWindow(WIN_W, WIN_H, "Scrollable List", CLR_BLACK);
 
     for (int i = 0; i < ITEM_COUNT; i++) {

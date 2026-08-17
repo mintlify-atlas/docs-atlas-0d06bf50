@@ -1,5 +1,5 @@
 ---
-title: "LWXGL Constants and Type Definitions"
+title: "LWXGL API Constants and Type Definitions Reference"
 sidebarTitle: "Constants"
 description: "All #define constants and struct types in libLWXGL.h: color constants, key codes, modal types, task types, rendering order, and element structs."
 ---
@@ -205,7 +205,7 @@ typedef struct {
     std::string data;        /* Full console text buffer */
     int rows, cols;          /* Visible grid dimensions */
     int scroll;              /* Current scroll offset (lines from top) */
-    int con_clr, txt_col;    /* CLR_* background and text colors */
+    int con_clr, txt_clr;    /* CLR_* background and text colors */
     int total_lines;         /* Total number of lines in the buffer */
 } ConsoleElement;
 ```

@@ -1,5 +1,5 @@
 ---
-title: "Element Management Functions — LWXGL API"
+title: "Element Management Functions — LWXGL C/C++ API Reference"
 sidebarTitle: "Management"
 description: "Reference for DeleteElement, ElemModifyBounds, ElemSetVisible, ElemInside, GetElement, and SetTooltip for managing LWXGL elements."
 ---
@@ -138,9 +138,9 @@ typedef struct {
 void SetTooltip(int id, const char* tooltip);
 ```
 
-Attaches a tooltip string to an element. When the cursor is inside the element's bounds, the tooltip is rendered at the bottom of the window. The string is duplicated with `strdup` internally, so the caller may free or modify the original after the call. Any previously set tooltip is freed before the new one is stored.
+Attaches a tooltip string to an element. When the cursor is inside the element's bounds, the tooltip is rendered at the bottom of the window. The string is duplicated with `strdup` internally, so the caller may free or modify the original after the call.
 
-Pass `NULL` to remove an existing tooltip without setting a new one.
+Pass `NULL` to remove an existing tooltip: this frees the previous string and sets the slot to `NULL`. When a non-`NULL` tooltip is passed, any previously set tooltip is **not** freed automatically — call `SetTooltip(id, NULL)` first if you need to replace a tooltip without leaking memory.
 
 <ParamField path="id" type="int" required>
   ID of an existing element.

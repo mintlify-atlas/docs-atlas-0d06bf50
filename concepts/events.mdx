@@ -1,7 +1,7 @@
 ---
-title: "Event Handling in LWXGL"
+title: "Event Handling: Keyboard, Mouse, and Window Callbacks"
 sidebarTitle: "Events"
-description: "LWXGL processes X11 events each frame. Attach callbacks for keyboard input, mouse clicks, window resize, scroll, and pointer movement."
+description: "LWXGL processes X11 events each frame. Attach callbacks for keyboard input, mouse clicks, window close, resize, scroll, and pointer movement."
 ---
 
 At the start of every frame, `MainWindowLoop` drains the X11 event queue with `XPending`/`XNextEvent` before invoking the render pass. Each event is dispatched through an internal handler map. LWXGL processes built-in interactions first (button clicks, input capture, modal intercepts) and only forwards the event to your registered callback if nothing handled it internally.
@@ -47,7 +47,7 @@ Called on mouse button **release** when the cursor is not over any UI element an
 ### Window Close Event
 
 ```c
-void EventAttachDelete(int (*on_exit)(void));
+void EventAttachDelete(int (*on_exit)());
 ```
 
 **Callback signature:**

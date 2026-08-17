@@ -1,5 +1,5 @@
 ---
-title: "TGA and XBM Image Functions — LWXGL API"
+title: "TGA and XBM Image Loading Functions — LWXGL API Ref"
 sidebarTitle: "TGA & XBM"
 description: "Reference for loading and drawing indexed TGA images and XBM bitmaps in LWXGL, including AllocateTGA, DrawIndexedTGA, CreateTGAImage, and CaptureRegion."
 ---
@@ -16,6 +16,20 @@ int AllocateTGA(const char* name, const char* path,
 ```
 
 Opens a TGA file from disk and decodes it into the internal allocation map. Supports TGA image type `1` (raw/uncompressed indexed) and type `9` (RLE compressed indexed). The file must be 8 bpp with exactly 16 palette entries. If a TGA is already allocated under `name`, it is freed before the new one is loaded.
+
+The file header is validated against all of the following byte conditions — any mismatch returns error code `2`:
+
+```text
+h[1]  == 1           (color map type: has colormap)
+h[2]  == 1 or 9      (image type: uncompressed or RLE indexed color)
+h[3]  == 0           (color map first entry index, low byte = 0)
+h[4]  == 0           (color map first entry index, high byte = 0)
+h[5]  == 16          (color map length low byte = 16 entries)
+h[6]  == 0           (color map length high byte = 0)
+h[7]  == 24          (color map entry size = 24 bits, BGR)
+h[16] == 8           (pixel depth = 8 bpp)
+h[17] == 32 or 0     (image descriptor: 32 = top-left origin, 0 = bottom-left)
+```
 
 **Return values:**
 
@@ -214,7 +228,7 @@ Convenience wrapper: allocates the XBM under the key `"XBMImage_" + path`, creat
 unsigned char* CaptureRegion(int x, int y, unsigned short w, unsigned short h);
 ```
 
-Grabs a rectangular region of the backbuffer and encodes it as an 8 bpp indexed TGA in memory. The returned buffer is a valid TGA file: an 18-byte header, a 48-byte palette (16 × 3 bytes, BGR order) taken from the current global palette, and `w * h` bytes of pixel data. The Y-origin flag is set to top-left (`0x20`).
+Grabs a rectangular region of the backbuffer and encodes it as an 8 bpp indexed TGA in memory. The returned buffer is a valid TGA file totaling `66 + w * h` bytes: an 18-byte header, a 48-byte palette (16 × 3 bytes, BGR order) taken from the current global palette, and `w * h` bytes of pixel data. The Y-origin flag is set to top-left (`0x20`).
 
 The caller owns the returned buffer and must free it with `free()`.
 
@@ -246,7 +260,9 @@ The caller owns the returned buffer and must free it with `free()`.
 GLuint GLConvertTGA(const char* name);
 ```
 
-Converts an allocated TGA to an OpenGL `GL_RGBA` texture. The palette is expanded to RGBA at conversion time; the transparent color index (if set) gets an alpha value of `0`, all other pixels get `255`. Texture filtering is set to `GL_NEAREST`. The previously bound `GL_TEXTURE_2D` is restored after upload.
+Converts an allocated TGA to an OpenGL `GL_RGBA` texture. The palette is expanded to RGBA at conversion time; the transparent color index (if set) gets an alpha value of `0`, all other pixels get `255`. Texture filtering is set to `GL_NEAREST` for both minification and magnification. The previously bound `GL_TEXTURE_2D` is restored after upload.
+
+During conversion the y-axis is flipped: for each output row `y`, the source row is read as `tga_y = (TGA.height - 1) - y`. This corrects for the difference between TGA bottom-up storage and OpenGL's bottom-up texture coordinate convention, ensuring the image appears the right way up when rendered with standard UV coordinates.
 
 Returns the `GLuint` texture ID, or `0` if the named TGA does not exist or has no palette (e.g., an XBM allocation).
 

@@ -205,7 +205,7 @@ Changes the window cursor using an X11 cursor font glyph index. LWXGL automatica
 |---|---|
 | `68` | Left pointer (default) |
 | `34` | Crosshair |
-| `52` | Hand pointer |
+| `52` | Fleur / four-way move |
 | `150` | Watch / busy |
 | `255` | Invisible (LWXGL extension — not an X11 glyph) |
 
@@ -221,5 +221,5 @@ ChangeCursor(255);
 ```
 
 <Tip>
-The full list of X11 cursor font glyphs is defined in `<X11/cursorfont.h>`. Divide the `XC_*` constant values by 2 to get the raw glyph index used by `ChangeCursor`.
+The full list of X11 cursor font glyphs is defined in `<X11/cursorfont.h>`. The `XC_*` constant values are the glyph indices directly — pass them as-is to `ChangeCursor` (for example, `XC_left_ptr` is `68`, `XC_crosshair` is `34`).
 </Tip>

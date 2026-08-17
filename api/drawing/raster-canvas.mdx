@@ -1,7 +1,7 @@
 ---
-title: "Raster Canvas and Drawing Primitives — LWXGL"
+title: "Raster Canvas and Pixel Drawing Primitives — LWXGL"
 sidebarTitle: "Raster Canvas"
-description: "Reference for CreateImage, GetImageData, UpdateImage, and canvas drawing primitives: PrimitiveRect, PrimitiveCircle, PrimitiveLine, PrimitiveTriangle, PrimitiveSprite."
+description: "Reference for CreateImage, GetImageData, UpdateImage, and canvas drawing primitives: PrimitiveRect, PrimitiveCircle, PrimitiveLine."
 ---
 
 An Image element is a software pixel buffer backed by an `XPixmap`. Each pixel is a single byte holding a color index (0–15) into the global 16-color palette. You manipulate the pixel array directly — through the primitive helpers or by writing raw bytes — and then call `UpdateImage` to flush changed pixels to the pixmap. The library performs a dirty-pixel comparison on every `UpdateImage` call, so only modified pixels trigger X11 drawing commands.
@@ -252,7 +252,7 @@ Draws a circle centered at `(cx, cy)` with radius `r`. A pixel at `(x, y)` is co
 void PrimitiveLine(int id, int x1, int y1, int x2, int y2, int color);
 ```
 
-Draws a line from `(x1, y1)` to `(x2, y2)` using linear interpolation. The step count equals `max(|dx|, |dy|)`, guaranteeing a connected pixel path. Pixels outside the image bounds are skipped.
+Draws a line from `(x1, y1)` to `(x2, y2)` using linear interpolation. The step count equals `max(|dx|, |dy|)`, guaranteeing a connected pixel path. At each step, the position advances by `x_inc = dx / (float)steps` and `y_inc = dy / (float)steps`, and the resulting float coordinates are rounded to the nearest integer pixel. Pixels outside the image bounds are skipped.
 
 <ParamField path="id" type="int" required>
   Element slot index.

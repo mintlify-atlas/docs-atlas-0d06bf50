@@ -1,7 +1,7 @@
 ---
-title: "Console Element — LWXGL API"
+title: "Console Element — LWXGL C/C++ API Reference Guide"
 sidebarTitle: "Console"
-description: "Reference for CreateConsole, ConsolePrint, and ConsoleClear. Display a scrollable text console inside your LWXGL window."
+description: "Reference for CreateConsole, ConsolePrint, and ConsoleClear in LWXGL. Display a scrollable, auto-scrolling text console inside your LWXGL window."
 ---
 
 The console element provides a scrollable, multi-line text display suitable for logs, debug output, or any stream of runtime messages. Text is appended with a `printf`-style interface and the view auto-scrolls to follow new output when it was already at the bottom. A scrollbar thumb is rendered on the right side, and hovering the console reveals position and scroll-percentage overlays in the top-right corner. The console stores its content as a single contiguous string and recomputes line wrapping each frame based on the configured column count.
@@ -43,11 +43,11 @@ The rightmost 13 pixels of the width are reserved for the scrollbar thumb.
 </ParamField>
 
 <ParamField path="con_clr" type="int" required>
-  Packed color for the console box. Upper nibble = border color, lower nibble = background fill color.
+  Packed color for the console box. Upper nibble = border color (also used for the scrollbar thumb). Lower nibble = background fill color (also used as the background behind hover overlay text).
 </ParamField>
 
 <ParamField path="txt_clr" type="int" required>
-  Packed color for text rendering. Upper nibble = text color, lower nibble = scrollbar thumb color.
+  Packed color for text rendering. Upper nibble = text color used for console output. Lower nibble = foreground color used for the hover overlay lines (rendered with `XDrawImageString` when the cursor is inside the console).
 </ParamField>
 
 ---
@@ -100,12 +100,12 @@ When the mouse cursor is inside the console bounds:
 
 - **Mouse wheel** — scrolls the view up or down.
 - **Spacebar** — jumps instantly to the bottom of the output.
-- **Top-right overlay** — two status lines appear, rendered using the scrollbar color as background and the text color as foreground:
+- **Top-right overlay** — two status lines appear, rendered using `XDrawImageString`. The glyph background uses `L(con_clr)` (the console fill color) and the foreground uses `L(txt_clr)` (the lower nibble of `txt_clr`):
   - `Viewing: <first> - <last> / <total>` — line range currently visible.
   - `Scroll: <n>%` — current scroll position as a percentage of maximum scroll.
 
 <Note>
-  The hover overlay is drawn using `XDrawImageString`, which fills the glyph background. The background color is taken from the lower nibble of `con_clr` and the foreground from the lower nibble of `txt_clr`.
+  The hover overlay is drawn using `XDrawImageString`, which fills the glyph background. The background color is `L(con_clr)` (the console fill color) and the foreground is `L(txt_clr)` (the lower nibble of `txt_clr`). The scrollbar thumb is drawn using `H(con_clr)` (the border/upper nibble of `con_clr`), not `txt_clr`.
 </Note>
 
 ---
@@ -118,8 +118,8 @@ When the mouse cursor is inside the console bounds:
 
 void setup(void) {
     // 60-column, 20-row console at (10, 10).
-    // con_clr 0x80: CLR_GRAY border, CLR_BLACK fill.
-    // txt_clr 0xF7: CLR_WHITE text, CLR_LGRAY scrollbar.
+    // con_clr 0x80: CLR_GRAY border+thumb, CLR_BLACK fill.
+    // txt_clr 0xF7: CLR_WHITE text, CLR_LGRAY hover-overlay foreground.
     CreateConsole(0, 10, 10, 60, 20, 0x80, 0xF7);
 
     ConsolePrint(0, "LWXGL console ready.\n");

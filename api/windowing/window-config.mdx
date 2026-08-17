@@ -1,7 +1,7 @@
 ---
-title: "Window Configuration Functions — LWXGL"
+title: "LWXGL Window Configuration and Palette API Reference"
 sidebarTitle: "Window Config"
-description: "Reference for LWXGL window configuration: SetWindowTitle, SetWindowColor, ChangeCursor, SetGlobalBold, PaletteModify, PaletteQuery, PaletteReset, GetXConnection."
+description: "Configure LWXGL windows at runtime: title, color, cursor, bold font, scroll, resizing, rendering order, color palette, and raw X11 connection access."
 ---
 
 These functions configure properties of the window and the rendering environment after `CreateWindow` returns. Palette functions let you swap colors at runtime; `GetXConnection` hands you the raw X11 handles for advanced or GLX usage; `ReserveScroll` and `EnableResizing` extend the window's layout capabilities and must be configured before or shortly after `CreateWindow`.
@@ -51,7 +51,7 @@ void ChangeCursor(int cursor_font_glyph);
 ```c
 ChangeCursor(255);   /* hide cursor over a full-screen canvas */
 ChangeCursor(68);    /* restore default left pointer          */
-ChangeCursor(150);   /* crosshair                             */
+ChangeCursor(34);    /* crosshair                             */
 ```
 
 ---
@@ -163,16 +163,16 @@ void GetXConnection(XConnectionData* data);
 
 ```c
 typedef struct {
-    Window        win;       /* the application window                  */
-    Display*      dpy;       /* X display connection                    */
     Pixmap        bb;        /* back-buffer Pixmap rendered each frame  */
     XFontStruct*  font;      /* current 9x15 or 9x15bold font           */
+    Display*      dpy;       /* X display connection                    */
+    Window        win;       /* the application window                  */
     GC            gc;        /* shared graphics context                 */
+    unsigned long clrs[16];  /* allocated pixel values for CLR_* indices */
     int           scrn;      /* default screen index                    */
     Visual*       vis;       /* default visual                          */
     int           depth;     /* default depth                           */
     Colormap      cmap;      /* default colormap                        */
-    unsigned long clrs[16];  /* allocated pixel values for CLR_* indices */
 } XConnectionData;
 ```
 

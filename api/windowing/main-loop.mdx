@@ -1,7 +1,7 @@
 ---
-title: "MainWindowLoop and Timing Functions — LWXGL"
+title: "MainWindowLoop, Timing, and Task Queue Reference — LWXGL"
 sidebarTitle: "Main Loop"
-description: "Reference for MainWindowLoop, GetElapsedTime, NewQueuedTask, and the per-frame callback signature in LWXGL."
+description: "Reference for LWXGL MainWindowLoop frame sequencing, GetElapsedTime, NewQueuedTask scheduling, SpawnModal dialogs, and the per-frame callback signature."
 ---
 
 `MainWindowLoop` is the heart of every LWXGL application. It blocks the calling thread, processes X11 events, drives rendering, and executes queued tasks on every frame tick until `DeleteWindow` is called. The companion functions below let you measure elapsed time, schedule deferred or repeating work, and spawn modal dialogs — all within that loop's lifetime.

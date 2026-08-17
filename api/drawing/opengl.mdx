@@ -1,5 +1,5 @@
 ---
-title: "OpenGL Element Functions — LWXGL API"
+title: "OpenGL Viewport Element Functions — LWXGL API Guide"
 sidebarTitle: "OpenGL"
 description: "Reference for CreateOpenGL, ChangeGLXContext, SynchronizeOpenGL, GLConvertTGA, and GLObjectListify for embedded OpenGL rendering in LWXGL."
 ---
@@ -84,6 +84,8 @@ GLuint GLConvertTGA(const char* name);
 
 Converts a TGA previously loaded with `AllocateTGA` or `AllocateMemoryTGA` into an OpenGL `GL_RGBA` texture. The indexed palette is expanded to RGBA per pixel. Transparent pixels (as configured in `AllocateTGA`) receive alpha `0`; all other pixels receive alpha `255`. Filtering is set to `GL_NEAREST` on both min and mag. The previously bound `GL_TEXTURE_2D` is restored after upload.
 
+During conversion the y-axis is flipped: for each output row `y`, the source row is read as `tga_y = (TGA.height - 1) - y`. This corrects for the difference between TGA bottom-up storage and OpenGL's bottom-up texture coordinate convention.
+
 Returns the `GLuint` texture ID, or `0` if the named TGA does not exist or has no palette.
 
 <ParamField path="name" type="const char*" required>
@@ -108,7 +110,7 @@ Returns the `GLuint` display list ID. Returns `0` on any parse error (bad format
 
 **Object format:**
 
-```
+```text
 COUNT <vertex_count>
 V <x> <y> <z>
 ... (vertex_count lines, one per vertex)

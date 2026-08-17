@@ -1,7 +1,7 @@
 ---
-title: "Text and Label Elements — LWXGL API"
+title: "Text and Label Elements — LWXGL C/C++ API Reference"
 sidebarTitle: "Text & Labels"
-description: "Reference for CreateText and CreateCopiedText in LWXGL. Display static text labels at fixed positions with a color index."
+description: "Reference for CreateText, CreateCopiedText, and CreateLabeledInput in LWXGL. Display static text labels at fixed positions with palette color indices."
 ---
 
 Text elements render a string at a fixed (x, y) position using one of the 16 palette color constants. Two variants are available depending on who owns the string's memory: `CreateText` stores the pointer directly for zero-copy rendering, while `CreateCopiedText` duplicates the string so the caller can free the original immediately after the call. `CreateLabeledInput` combines a copied-text label with an input field for quick form layout.

@@ -1,7 +1,7 @@
 ---
-title: "Install LWXGL from Source"
+title: "Installing LWXGL: Build from Source and Link with -lLWXGL"
 sidebarTitle: "Installation"
-description: "Build libLWXGL.so from source using make, install to /usr/local/lib, and link your C or C++ program with -lLWXGL."
+description: "Build libLWXGL.so from source with make, copy the shared object to /usr/local/lib and the header to /usr/local/include, then link with -lLWXGL."
 ---
 
 LWXGL is distributed as source code. You build the shared object yourself with a single `make` invocation, then install it system-wide so any program on the machine can link against it with `‑lLWXGL`. There are no pre-built binaries and no package manager entries.
@@ -27,7 +27,7 @@ g++ --version   # 7.1 or newer is sufficient
     Obtain the LWXGL source tree and enter the project root:
 
     ```bash
-    git clone https://github.com/your-org/LWXGL.git
+    git clone https://github.com/DREsSedAlarm184/LWXGL.git
     cd LWXGL
     ```
   </Step>
@@ -87,7 +87,7 @@ gcc -o myapp myapp.c -lLWXGL -lGL -lX11
 ```
 
 <Note>
-  The Makefile compiles LWXGL itself with `g++ -std=gnu++17 -fPIC -shared`, so the library binary is C++ internally. The installed header `libLWXGL.h` wraps all declarations in `extern "C"`, making every symbol safe to call from plain C translation units without any name-mangling issues.
+  The Makefile compiles LWXGL itself with `g++ -std=gnu++17 -D_GNU_SOURCE -fPIC -shared -fvisibility=hidden`, so the library binary is C++ internally. The installed header `libLWXGL.h` wraps all declarations in `extern "C"`, making every symbol safe to call from plain C translation units without any name-mangling issues.
 </Note>
 
 <Tip>

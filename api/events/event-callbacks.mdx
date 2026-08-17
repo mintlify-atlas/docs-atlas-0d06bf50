@@ -1,7 +1,7 @@
 ---
-title: "Event Callback Functions — LWXGL API"
+title: "Registering Event Callbacks in LWXGL — API Reference"
 sidebarTitle: "Event Callbacks"
-description: "Reference for EventAttachKey, EventAttachClick, EventAttachDelete, EventAttachMove, and EnableResizing in LWXGL."
+description: "Register callbacks for key presses, mouse clicks, pointer motion, window close, and resize events in LWXGL using EventAttach and EnableResizing."
 ---
 
 LWXGL routes X11 events to user-supplied callbacks registered before `MainWindowLoop` is called. Each function below stores a single function pointer; calling the same registration function a second time overwrites the previous callback. All callbacks run on the main thread inside the event-processing step of the window loop.
@@ -25,6 +25,18 @@ Registers a callback that fires whenever a key press event is received from X11.
 </Note>
 
 Up to **8 simultaneous key presses** are tracked internally. If more than 8 keys are held at once, additional presses are silently ignored until a slot frees up on key release.
+
+### KEY_* Constants
+
+The following constants are defined in `libLWXGL.h` for keys that have no printable ASCII representation:
+
+| Constant | Value | Key |
+|---|---|---|
+| `KEY_FN` | `150` | Base offset for function keys (F1 = 151, F2 = 152, …, F12 = 162) |
+| `KEY_LEFT` | `170` | Left arrow |
+| `KEY_RIGHT` | `171` | Right arrow |
+| `KEY_UP` | `172` | Up arrow |
+| `KEY_DOWN` | `173` | Down arrow |
 
 ---
 
@@ -58,6 +70,8 @@ Registers a callback for mouse **button release** events. The callback receives 
   | `3` | Right |
   | `4` | Scroll wheel up |
   | `5` | Scroll wheel down |
+
+  Buttons `4` and `5` only reach this callback when window scroll is **not** enabled via `ReserveScroll`. When scroll is enabled, buttons `4` and `5` are consumed by the scroll system and do not fire this callback.
 </ParamField>
 
 <Note>
@@ -90,10 +104,10 @@ Registers a callback for the `WM_DELETE_WINDOW` client message, sent by the wind
 void EventAttachMove(void (*Move)(int x, int y));
 ```
 
-Registers a callback for pointer motion events. The callback is invoked every time the cursor moves within the window. When the pointer **leaves** the window entirely, the callback is called once with `x = -1, y = -1`.
+Registers a callback for pointer motion events. The callback fires on both `MotionNotify` (cursor movement within the window) and `LeaveNotify` (cursor exiting the window). When the pointer **leaves** the window entirely, the callback is called once with `x = -1, y = -1`.
 
 <ParamField path="Move" type="void (*)(int x, int y)" required>
-  Callback invoked on each pointer motion event. Receives `x = -1, y = -1` when the cursor exits the window.
+  Callback invoked on each pointer motion event and on window leave. Receives `x = -1, y = -1` when the cursor exits the window.
 </ParamField>
 
 <Tip>
@@ -108,14 +122,14 @@ Registers a callback for pointer motion events. The callback is invoked every ti
 void EnableResizing(void (*Resize)(int w, int h));
 ```
 
-Unlocks window resizing at the window-manager level and registers a callback that fires whenever the window dimensions change. This function must be called **after** `CreateWindow`. The callback receives the new client-area dimensions.
+Unlocks window resizing at the window-manager level and registers a callback that fires whenever the window dimensions change. This function must be called **after** `CreateWindow`. The callback receives the new client-area dimensions. Internally calls `XSetWMNormalHints` to update the window manager size constraints.
 
 <ParamField path="Resize" type="void (*)(int w, int h)" required>
   Callback invoked after the window is resized. `w` and `h` are the new window width and height in pixels.
 </ParamField>
 
 <Note>
-  When scroll mode is enabled via `ReserveScroll`, the window's maximum resizable height is capped at the virtual canvas height set by `ReserveScroll`. This constraint is enforced through `XSetWMNormalHints`.
+  When scroll mode is enabled via `ReserveScroll`, the window's maximum resizable height is capped at the virtual canvas height (`bb.h`) set by `ReserveScroll`. This constraint is enforced through `XSetWMNormalHints`.
 </Note>
 
 ---
