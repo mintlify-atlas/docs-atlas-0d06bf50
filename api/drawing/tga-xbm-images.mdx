@@ -1,0 +1,334 @@
+---
+title: "TGA and XBM Image Functions — LWXGL API"
+sidebarTitle: "TGA & XBM"
+description: "Reference for loading and drawing indexed TGA images and XBM bitmaps in LWXGL, including AllocateTGA, DrawIndexedTGA, CreateTGAImage, and CaptureRegion."
+---
+
+LWXGL supports two external bitmap formats: indexed TGA files (8 bpp with a 16-entry RGB palette) and X BitMap (XBM) files. Both formats are decoded into an internal `AllocatedTGA` record — a flat pixel array plus an optional palette — stored in a name-keyed map. Once allocated, an image can be drawn onto any Image element with `DrawIndexedTGA`, converted to an OpenGL texture with `GLConvertTGA`, or freed with `DeleteTGA`.
+
+---
+
+## AllocateTGA
+
+```c
+int AllocateTGA(const char* name, const char* path,
+                int change_palette, int transparent);
+```
+
+Opens a TGA file from disk and decodes it into the internal allocation map. Supports TGA image type `1` (raw/uncompressed indexed) and type `9` (RLE compressed indexed). The file must be 8 bpp with exactly 16 palette entries. If a TGA is already allocated under `name`, it is freed before the new one is loaded.
+
+**Return values:**
+
+| Value | Meaning |
+|-------|---------|
+| `0` | Success |
+| `1` | File not found or could not be opened |
+| `2` | Invalid format — not an 8 bpp indexed TGA with a 16-entry palette |
+
+<ParamField path="name" type="const char*" required>
+  String key used to reference this TGA in subsequent calls.
+</ParamField>
+
+<ParamField path="path" type="const char*" required>
+  Filesystem path to the `.tga` file.
+</ParamField>
+
+<ParamField path="change_palette" type="int" required>
+  If `1`, the TGA's 16-color RGB palette is applied to the global display palette each time this image is drawn with `DrawIndexedTGA`. If `0`, the current palette is used as-is.
+</ParamField>
+
+<ParamField path="transparent" type="int" required>
+  Color index (0–15) to treat as transparent when drawing. Pixels with this index are skipped. Pass `-1` for no transparency.
+</ParamField>
+
+---
+
+## AllocateMemoryTGA
+
+```c
+int AllocateMemoryTGA(const char* name, const char* buffer,
+                      int size, int change_palette, int transparent);
+```
+
+Identical to `AllocateTGA` but reads from an in-memory buffer instead of a file path. Internally creates an anonymous file descriptor with `memfd_create`, writes the buffer into it, and passes the resulting `/proc/self/fd/<n>` path to `AllocateTGA`. Useful for embedding TGA data in compiled binaries.
+
+<ParamField path="name" type="const char*" required>
+  String key for later retrieval.
+</ParamField>
+
+<ParamField path="buffer" type="const char*" required>
+  Pointer to a buffer containing the raw TGA file data.
+</ParamField>
+
+<ParamField path="size" type="int" required>
+  Number of bytes in `buffer`.
+</ParamField>
+
+<ParamField path="change_palette" type="int" required>
+  Same semantics as `AllocateTGA`.
+</ParamField>
+
+<ParamField path="transparent" type="int" required>
+  Transparent color index, or `-1` for none.
+</ParamField>
+
+---
+
+## DeleteTGA
+
+```c
+void DeleteTGA(const char* name);
+```
+
+Frees the pixel data and palette buffers for the entry at `name` and removes it from the allocation map. Also used to free XBM allocations, since both formats share the same backing map. A no-op if `name` is not present.
+
+<ParamField path="name" type="const char*" required>
+  String key of the allocation to free.
+</ParamField>
+
+---
+
+## DrawIndexedTGA
+
+```c
+void DrawIndexedTGA(int id, int x, int y, const char* name);
+```
+
+Blits a previously allocated TGA onto Image element `id` at offset `(x, y)`. If the allocation has `change_palette=1`, the TGA's palette is applied to the global display palette before drawing (the final palette entry triggers a full palette flush). Transparent pixels are skipped. Pixels outside the Image bounds are clipped.
+
+<ParamField path="id" type="int" required>
+  Element slot index of an existing Image element.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left offset within the Image element's pixel array.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top offset within the Image element's pixel array.
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Key of a TGA previously loaded with `AllocateTGA` or `AllocateMemoryTGA`.
+</ParamField>
+
+<Note>
+  `DrawIndexedTGA` writes to the in-memory pixel array only. Call `UpdateImage(id)` after drawing to flush the changes to the screen.
+</Note>
+
+---
+
+## CreateTGAImage
+
+```c
+int CreateTGAImage(int id, int x, int y, const char* path, int change_palette);
+```
+
+Convenience function that combines `AllocateTGA`, `CreateImage`, `DrawIndexedTGA`, and `UpdateImage` in a single call. Creates an Image element sized exactly to the TGA's dimensions and draws the image at offset `(0, 0)`. The TGA is stored internally under the key `"TGAImage_" + path` and is reused on subsequent calls with the same path.
+
+Returns `0` on success, or a non-zero `AllocateTGA` error code on failure.
+
+<ParamField path="id" type="int" required>
+  Element slot index for the new Image element.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the Image element in window pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the Image element in window pixels.
+</ParamField>
+
+<ParamField path="path" type="const char*" required>
+  Filesystem path to the `.tga` file.
+</ParamField>
+
+<ParamField path="change_palette" type="int" required>
+  Passed through to `AllocateTGA`. `1` to apply the TGA's palette globally.
+</ParamField>
+
+---
+
+## AllocateXBM
+
+```c
+int AllocateXBM(const char* name, const char* path, int colors, int transparent);
+```
+
+Loads an X BitMap file using `XReadBitmapFileData` and converts each bit into a palette index. The `colors` parameter encodes two palette indices in a single `int`: the upper nibble (bits 7–4) maps to pixels where the source bit is `1`; the lower nibble (bits 3–0) maps to pixels where the source bit is `0`.
+
+Returns `1` on success, `0` if `XReadBitmapFileData` fails.
+
+<ParamField path="name" type="const char*" required>
+  String key for later retrieval via `DrawIndexedTGA`.
+</ParamField>
+
+<ParamField path="path" type="const char*" required>
+  Filesystem path to the `.xbm` file.
+</ParamField>
+
+<ParamField path="colors" type="int" required>
+  Packed color encoding. Upper nibble = color for bit `1`, lower nibble = color for bit `0`. Example: `0xFC` maps bit-1 pixels to index `0xF` (white) and bit-0 pixels to index `0xC` (light red).
+</ParamField>
+
+<ParamField path="transparent" type="int" required>
+  Transparency rule: `1` = the bit-1 color is transparent; `0` = the bit-0 color is transparent; `-1` = no transparency.
+</ParamField>
+
+---
+
+## CreateXBMImage
+
+```c
+int CreateXBMImage(int id, int x, int y, const char* path, int colors);
+```
+
+Convenience wrapper: allocates the XBM under the key `"XBMImage_" + path`, creates a matching Image element, draws it, and calls `UpdateImage`. Returns `1` on success, `0` on failure.
+
+<ParamField path="id" type="int" required>
+  Element slot index for the new Image element.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the Image element in window pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the Image element in window pixels.
+</ParamField>
+
+<ParamField path="path" type="const char*" required>
+  Filesystem path to the `.xbm` file.
+</ParamField>
+
+<ParamField path="colors" type="int" required>
+  Packed color encoding passed to `AllocateXBM`.
+</ParamField>
+
+---
+
+## CaptureRegion
+
+```c
+unsigned char* CaptureRegion(int x, int y, unsigned short w, unsigned short h);
+```
+
+Grabs a rectangular region of the backbuffer and encodes it as an 8 bpp indexed TGA in memory. The returned buffer is a valid TGA file: an 18-byte header, a 48-byte palette (16 × 3 bytes, BGR order) taken from the current global palette, and `w * h` bytes of pixel data. The Y-origin flag is set to top-left (`0x20`).
+
+The caller owns the returned buffer and must free it with `free()`.
+
+<ParamField path="x" type="int" required>
+  Left edge of the capture region in backbuffer pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the capture region in backbuffer pixels.
+</ParamField>
+
+<ParamField path="w" type="unsigned short" required>
+  Width of the region to capture.
+</ParamField>
+
+<ParamField path="h" type="unsigned short" required>
+  Height of the region to capture.
+</ParamField>
+
+<Warning>
+  The returned buffer is heap-allocated by the library. You must call `free()` on it when done, or you will leak memory.
+</Warning>
+
+---
+
+## GLConvertTGA
+
+```c
+GLuint GLConvertTGA(const char* name);
+```
+
+Converts an allocated TGA to an OpenGL `GL_RGBA` texture. The palette is expanded to RGBA at conversion time; the transparent color index (if set) gets an alpha value of `0`, all other pixels get `255`. Texture filtering is set to `GL_NEAREST`. The previously bound `GL_TEXTURE_2D` is restored after upload.
+
+Returns the `GLuint` texture ID, or `0` if the named TGA does not exist or has no palette (e.g., an XBM allocation).
+
+<ParamField path="name" type="const char*" required>
+  Key of a TGA previously loaded with `AllocateTGA` or `AllocateMemoryTGA`.
+</ParamField>
+
+<Warning>
+  A valid GLX context must be current before calling `GLConvertTGA`. See the [OpenGL](/api/drawing/opengl) page for context management.
+</Warning>
+
+---
+
+## Examples
+
+### Loading and drawing a TGA
+
+```c
+#include "libLWXGL.h"
+
+#define SPRITE_CANVAS 0
+
+int main(void) {
+    CreateWindow(640, 480, "TGA Demo", CLR_BLACK);
+
+    /* Load a 16-color indexed TGA; apply its palette; color 0 is transparent */
+    if (AllocateTGA("player", "assets/player.tga", 1, 0) != 0) {
+        /* handle error */
+        return 1;
+    }
+
+    /* Create an image element the full window size */
+    CreateImage(SPRITE_CANVAS, 0, 0, 640, 480);
+
+    /* Draw the TGA at offset (100, 80) inside the canvas */
+    DrawIndexedTGA(SPRITE_CANVAS, 100, 80, "player");
+    UpdateImage(SPRITE_CANVAS);
+
+    MainWindowLoop(60, NULL);
+    DeleteTGA("player");
+    DeleteWindow();
+    return 0;
+}
+```
+
+### Loading an XBM bitmap
+
+```c
+#include "libLWXGL.h"
+
+int main(void) {
+    CreateWindow(320, 240, "XBM Demo", CLR_BLACK);
+
+    /*
+     * Load icon.xbm: bit-1 pixels → CLR_WHITE (0xF),
+     *                bit-0 pixels → CLR_BLACK (0x0),
+     *                bit-0 color is transparent.
+     */
+    CreateXBMImage(1, 10, 10, "assets/icon.xbm", 0xF0);
+
+    MainWindowLoop(60, NULL);
+    DeleteWindow();
+    return 0;
+}
+```
+
+### Capturing the backbuffer to a TGA file
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+void save_screenshot(void) {
+    unsigned char *tga = CaptureRegion(0, 0, 640, 480);
+
+    FILE *f = fopen("screenshot.tga", "wb");
+    if (f) {
+        fwrite(tga, 1, 66 + 640 * 480, f);
+        fclose(f);
+    }
+
+    free(tga); /* caller must free */
+}
+```

@@ -1,0 +1,107 @@
+---
+title: "CreateWindow and TerminateWindow — LWXGL"
+sidebarTitle: "CreateWindow"
+description: "Create and destroy an X11 window with LWXGL. Reference for CreateWindow, TerminateWindow, DeleteWindow, and their parameters and return codes."
+---
+
+Every LWXGL application starts and ends with three calls: `CreateWindow` to open the X11 window and initialize the library, `MainWindowLoop` to run the event-render loop, and `TerminateWindow` to release every resource acquired during the session. The functions below cover the first and last of those steps, plus `DeleteWindow`, which is how you signal the loop to stop from within the application.
+
+<Note>
+  The required initialization order is: `ReserveScroll` (optional, must come first) → `CreateWindow` → element creation → `MainWindowLoop` → `TerminateWindow`. Calling any rendering or element function before `CreateWindow` returns 0 produces undefined behavior.
+</Note>
+
+---
+
+## CreateWindow
+
+Opens the X11 display connection, allocates the 16-entry color palette, creates and maps the window, initializes the back-buffer `Pixmap`, and loads the default `9x15` bitmap font. This function must be called before any other LWXGL function except `ReserveScroll`.
+
+```c
+int CreateWindow(int w, int h, const char* name, int bgcolor);
+```
+
+<ParamField path="w" type="int" required>
+  Window width in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Window height in pixels. If `ReserveScroll` was called first, this is the visible viewport height; the virtual canvas height was already set by `ReserveScroll`.
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Text displayed in the window title bar.
+</ParamField>
+
+<ParamField path="bgcolor" type="int" required>
+  Background color index (`CLR_*` constant) used to clear the window at the start of each frame. Pass `CLR_NONE` (-1) to skip clearing.
+</ParamField>
+
+### Return values
+
+| Value | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | `XOpenDisplay` failed — no X display available. |
+| `2` | Font `9x15` not found on the X server. |
+| `3` | A window is already open — `CreateWindow` was called twice. |
+| `127 + i` | `XAllocColor` failed for palette entry `i`. Any colors already allocated for indices 0 through `i-1` are freed before returning. |
+
+### Example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+int main(void) {
+    int rc = CreateWindow(800, 600, "My App", CLR_BLACK);
+    if (rc != 0) {
+        fprintf(stderr, "CreateWindow failed: %d\n", rc);
+        return 1;
+    }
+
+    /* create elements here */
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```
+
+---
+
+## TerminateWindow
+
+Releases every resource that LWXGL owns: all active elements, all `AllocateTGA` / `AllocateXBM` allocations, any pending modal state, the GC, the back-buffer `Pixmap`, all 16 allocated X colors, the window itself, and the X display connection. Call this once, immediately after `MainWindowLoop` returns.
+
+```c
+void TerminateWindow(void);
+```
+
+`TerminateWindow` takes no parameters and returns nothing. It is safe to call even when elements are still present in the element list — each element is freed in order before the X resources are torn down.
+
+<Warning>
+  Do not call any LWXGL function after `TerminateWindow`. The display pointer is closed and all handles are invalid.
+</Warning>
+
+---
+
+## DeleteWindow
+
+Signals the main loop to exit at the end of the current frame. If an `EventAttachDelete` callback is registered, it is called first; if that callback returns `0`, the close is cancelled and the loop continues.
+
+```c
+void DeleteWindow(void);
+```
+
+`DeleteWindow` takes no parameters and returns nothing. It does **not** free any resources — that is `TerminateWindow`'s job.
+
+<Tip>
+  `DeleteWindow` is the correct callback to pass to a Quit button's `onclick`. Do not call `TerminateWindow` from inside the loop.
+</Tip>
+
+```c
+/* Quit button that respects an EventAttachDelete guard */
+CreateButton(0, 10, 10, 80, 30,
+             CLR_LGRAY, CLR_WHITE, CLR_GRAY,
+             "Quit", DeleteWindow);
+```

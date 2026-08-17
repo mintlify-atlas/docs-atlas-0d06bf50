@@ -1,0 +1,416 @@
+---
+title: "Raster Canvas and Drawing Primitives — LWXGL"
+sidebarTitle: "Raster Canvas"
+description: "Reference for CreateImage, GetImageData, UpdateImage, and canvas drawing primitives: PrimitiveRect, PrimitiveCircle, PrimitiveLine, PrimitiveTriangle, PrimitiveSprite."
+---
+
+An Image element is a software pixel buffer backed by an `XPixmap`. Each pixel is a single byte holding a color index (0–15) into the global 16-color palette. You manipulate the pixel array directly — through the primitive helpers or by writing raw bytes — and then call `UpdateImage` to flush changed pixels to the pixmap. The library performs a dirty-pixel comparison on every `UpdateImage` call, so only modified pixels trigger X11 drawing commands.
+
+---
+
+## CreateImage
+
+```c
+void CreateImage(int id, int x, int y, int w, int h);
+```
+
+Allocates an Image element and registers it at slot `id`. The element owns an `XImage`, a pixel data array (`w*h` bytes), a previous-frame array used by the dirty check, a raw image data buffer, and an `XPixmap`.
+
+If `w` or `h` is `<= 0`, the dimension expands to fill the remaining window space: `actual = window_dimension - position + value`. Passing `0` produces an edge-to-edge fill; passing a negative value insets from the far edge.
+
+<ParamField path="id" type="int" required>
+  Element slot index. Must not already be in use.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the element in window pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the element in window pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels. Values `<= 0` expand to fill remaining horizontal space.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels. Values `<= 0` expand to fill remaining vertical space.
+</ParamField>
+
+---
+
+## GetImageData
+
+```c
+unsigned char* GetImageData(int id);
+```
+
+Returns a pointer to the pixel array for element `id`. The array is `w * h` bytes in row-major order. Each byte is a palette index (0–15); the upper nibble is ignored on write. Pixel at column `x`, row `y` is located at `data[y * w + x]`.
+
+<ParamField path="id" type="int" required>
+  Element slot index of an existing Image element.
+</ParamField>
+
+<Note>
+  The returned pointer is valid until the element is deleted. Do not free it — the library owns the allocation.
+</Note>
+
+---
+
+## UpdateImage
+
+```c
+void UpdateImage(int id);
+```
+
+Compares the current pixel array to the previous-frame array pixel by pixel. Any byte that differs is written into the `XImage` via `put_pixel`, and if at least one pixel changed the whole `XImage` is flushed to the `XPixmap` with `XPutImage`. The previous-frame array is updated in the same pass. Call this after any batch of pixel writes.
+
+<ParamField path="id" type="int" required>
+  Element slot index of an existing Image element.
+</ParamField>
+
+<Tip>
+  Batch all pixel writes for a frame before calling `UpdateImage` once. Calling it repeatedly in a loop negates the dirty-check benefit.
+</Tip>
+
+---
+
+## ClearImage
+
+```c
+void ClearImage(int id, int c);
+```
+
+Fills the entire pixel array with color index `c` using `memset`. Does **not** call `UpdateImage` — you must call it separately to make the clear visible on screen.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="c" type="int" required>
+  Color index (0–15) to fill every pixel with.
+</ParamField>
+
+---
+
+## RedrawAllImages
+
+```c
+void RedrawAllImages(void);
+```
+
+Forces a full redraw of every Image element. Marks all previous-frame pixels as dirty (sets them to `255`) and calls `UpdateImage` on each Image element in the element list. Use after a palette change or when re-attaching a window to ensure no stale pixels remain.
+
+---
+
+## SetImageFont
+
+```c
+void SetImageFont(int id, unsigned char* font, int h);
+```
+
+Installs a bitmap font for use with `DrawString` on Image element `id`. The font buffer is copied internally, so the caller may free `font` after the call.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="font" type="unsigned char*" required>
+  Pointer to a `256 * h` byte bitmap font. Character `c` occupies bytes `c*h` through `c*h + h - 1`, where each byte is a bitmask of 8 horizontal pixels (MSB = leftmost).
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels of each character glyph.
+</ParamField>
+
+---
+
+## DrawString
+
+```c
+void DrawString(int id, int x, int y, const char* txt, int color);
+```
+
+Renders `txt` into the pixel array using the font installed by `SetImageFont`. Each character cell is 9 px wide (8 glyph bits + 1 px gap) and `h` px tall. Newlines (`\n`) advance `y` by `h` and reset the column counter. Pixels that fall outside the image bounds are clipped.
+
+<ParamField path="id" type="int" required>
+  Element slot index. Must have a font installed via `SetImageFont`.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the first character in image-local pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the first character in image-local pixels.
+</ParamField>
+
+<ParamField path="txt" type="const char*" required>
+  Null-terminated string. `\n` advances to the next line.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) for set pixels. Unset bits in the font are not written.
+</ParamField>
+
+---
+
+## ApplyPixelFunc
+
+```c
+void ApplyPixelFunc(int id, int (*f)(int x, int y, int color));
+```
+
+Iterates over every pixel in the image, passing its coordinates and current color index to `f`. The pixel is replaced with `f(x, y, color) % 16`. Useful for palette-mapped effects such as brightness shifts or pattern overlays.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="f" type="int (*)(int x, int y, int color)" required>
+  Callback invoked for each pixel. Return the new color index (taken mod 16).
+</ParamField>
+
+---
+
+## PrimitiveRect
+
+```c
+void PrimitiveRect(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+Writes a rectangle into the pixel array. The four edge pixels use `fg`; interior pixels use `bg`. If `fg` is `-1`, border pixels inherit `bg`. Pass `-1` for `bg` to skip fill pixels entirely. Pixels outside the image bounds are clipped.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge in image-local pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge in image-local pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Border pixel color index, or `CLR_NONE` (`-1`) to use `bg` for all pixels.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill pixel color index, or `-1` to leave interior pixels unchanged.
+</ParamField>
+
+---
+
+## PrimitiveCircle
+
+```c
+void PrimitiveCircle(int id, int cx, int cy, int r, int fg, int bg);
+```
+
+Draws a circle centered at `(cx, cy)` with radius `r`. A pixel at `(x, y)` is considered a border pixel when `|dx²+dy²-r²| < r` (where `dx = x-cx`, `dy = y-cy`), and a fill pixel when `dx²+dy² <= r²`. Border pixels take `fg`; fill pixels (that are not border pixels) take `bg`. Either can be `-1` to skip.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="cx" type="int" required>
+  Center X in image-local pixels.
+</ParamField>
+
+<ParamField path="cy" type="int" required>
+  Center Y in image-local pixels.
+</ParamField>
+
+<ParamField path="r" type="int" required>
+  Radius in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Border color index, or `-1` to skip the outline.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color index, or `-1` to skip the fill.
+</ParamField>
+
+---
+
+## PrimitiveLine
+
+```c
+void PrimitiveLine(int id, int x1, int y1, int x2, int y2, int color);
+```
+
+Draws a line from `(x1, y1)` to `(x2, y2)` using linear interpolation. The step count equals `max(|dx|, |dy|)`, guaranteeing a connected pixel path. Pixels outside the image bounds are skipped.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="x1" type="int" required>
+  Start X in image-local pixels.
+</ParamField>
+
+<ParamField path="y1" type="int" required>
+  Start Y in image-local pixels.
+</ParamField>
+
+<ParamField path="x2" type="int" required>
+  End X in image-local pixels.
+</ParamField>
+
+<ParamField path="y2" type="int" required>
+  End Y in image-local pixels.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette color index (0–15).
+</ParamField>
+
+---
+
+## PrimitiveTriangle
+
+```c
+void PrimitiveTriangle(int id, int x1, int y1, int x2, int y2,
+                        int x3, int y3, int fg, int bg);
+```
+
+Fills a triangle defined by three vertices. Interior pixels are determined by a barycentric edge-function test and written with `bg`. If `fg != -1`, the three edges are drawn over the fill using `PrimitiveLine`. The fill scan is clamped to the image bounds.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="x1, y1" type="int" required>
+  First vertex in image-local pixels.
+</ParamField>
+
+<ParamField path="x2, y2" type="int" required>
+  Second vertex in image-local pixels.
+</ParamField>
+
+<ParamField path="x3, y3" type="int" required>
+  Third vertex in image-local pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Edge color index, or `-1` to skip edge drawing.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color index, or `-1` to skip fill.
+</ParamField>
+
+---
+
+## PrimitiveSprite
+
+```c
+void PrimitiveSprite(int id, int sx, int sy, int color,
+                     const char* sprite, int scale);
+```
+
+Draws an RLE-encoded sprite anchored at `(sx, sy)`. Each pixel is rendered as a `scale × scale` block. The sprite string is a compact text description of the bitmap.
+
+**Sprite string commands:**
+
+| Character | Meaning |
+|-----------|---------|
+| `#` | Draw one pixel block with `color`, advance X by `scale`. |
+| `.` | Draw one pixel block with color index `0` (black), advance X by `scale`. |
+| `$` | Newline — reset X to `sx`, advance Y by `scale`. |
+| `>` | Skip — advance X by `scale` without drawing. |
+| `0`–`9` | Decimal repeat count prefix for the next single command. |
+| `[...]` | Group — repeat the enclosed commands by the preceding count (default 1). |
+
+Repeat counts and groups nest: `3[2#$]` draws two pixels, newlines, three times.
+
+<ParamField path="id" type="int" required>
+  Element slot index.
+</ParamField>
+
+<ParamField path="sx" type="int" required>
+  Left edge of the sprite in image-local pixels.
+</ParamField>
+
+<ParamField path="sy" type="int" required>
+  Top edge of the sprite in image-local pixels.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index used for `#` pixels.
+</ParamField>
+
+<ParamField path="sprite" type="const char*" required>
+  Null-terminated RLE sprite string.
+</ParamField>
+
+<ParamField path="scale" type="int" required>
+  Pixel block size. `1` = 1:1, `2` = each logical pixel covers a 2×2 block, etc.
+</ParamField>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <string.h>
+
+#define CANVAS 0
+
+/* Simple 8px tall bitmap font — one byte per row, one char per 8 rows */
+extern unsigned char my_font[256 * 8];
+
+void on_every(int frame, float dt) {
+    unsigned char *px = GetImageData(CANVAS);
+    int w = 320, h = 240;
+
+    /* Clear to dark blue */
+    ClearImage(CANVAS, CLR_BLUE);
+
+    /* Filled triangle */
+    PrimitiveTriangle(CANVAS, 160, 20, 60, 180, 260, 180, CLR_YELLOW, CLR_CYAN);
+
+    /* Outlined circle */
+    PrimitiveCircle(CANVAS, 160, 120, 40, CLR_WHITE, CLR_NONE);
+
+    /* Diagonal line */
+    PrimitiveLine(CANVAS, 0, 0, 319, 239, CLR_LRED);
+
+    /* Small sprite: 3×3 cross at scale 2 */
+    PrimitiveSprite(CANVAS, 10, 10, CLR_LGREEN,
+                    ">##$##>$>##", 2);
+
+    /* Text via bitmap font */
+    DrawString(CANVAS, 4, 4, "Hello, LWXGL!", CLR_WHITE);
+
+    /* Flush to X pixmap */
+    UpdateImage(CANVAS);
+}
+
+int main(void) {
+    CreateWindow(320, 240, "Raster Demo", CLR_BLACK);
+    CreateImage(CANVAS, 0, 0, 320, 240);
+    SetImageFont(CANVAS, my_font, 8);
+    MainWindowLoop(60, on_every);
+    DeleteWindow();
+    return 0;
+}
+```
+
+<Note>
+  Always call `UpdateImage` after modifying the pixel array. `ClearImage` and all `Primitive*` functions write only to the in-memory array — nothing becomes visible until `UpdateImage` flushes the changes to the `XPixmap`.
+</Note>

@@ -1,0 +1,177 @@
+---
+title: "Keyboard and Mouse Query Functions — LWXGL"
+sidebarTitle: "Keyboard & Mouse"
+description: "Reference for QueryMouse, QueryKeyDown, QueryKeyboard, QueryKeyboardRaw, and QueryKeysymDown for polling input state in LWXGL."
+---
+
+LWXGL maintains internal state for the currently held mouse button and up to eight simultaneously pressed keys. The functions below allow you to poll that state at any point — most commonly inside the frame callback passed to `MainWindowLoop` — without relying on event callbacks. All state is updated during the event-processing step that runs at the start of each frame.
+
+---
+
+## `QueryMouse`
+
+```c
+void QueryMouse(int* x, int* y, int* btn);
+```
+
+Fills the three output parameters with the current mouse state. `x` and `y` are the cursor's last known position in window coordinates. `btn` reflects the button that is currently **held down** (`0` when no button is pressed).
+
+<ParamField path="x" type="int*" required>
+  Receives the current horizontal cursor position in window coordinates.
+</ParamField>
+
+<ParamField path="y" type="int*" required>
+  Receives the current vertical cursor position in window coordinates.
+</ParamField>
+
+<ParamField path="btn" type="int*" required>
+  Receives the currently held mouse button: `1` = left, `2` = middle, `3` = right, `0` = none.
+</ParamField>
+
+---
+
+## `QueryKeyboard`
+
+```c
+unsigned char* QueryKeyboard();
+```
+
+Returns a pointer to the internal `pressed_keys` array (8 bytes). Each non-zero byte holds the character code of a key that is currently held down — the same codes delivered to an `EventAttachKey` callback. A zero byte means that slot is empty. The order of entries within the array is not significant.
+
+<Warning>
+  The returned pointer is valid for the lifetime of the window. Do **not** free it. The contents change on every key press and release, so copy values out if you need a stable snapshot.
+</Warning>
+
+---
+
+## `QueryKeyDown`
+
+```c
+int QueryKeyDown(int ch);
+```
+
+Returns `1` if the key with character code `ch` is currently held down, `0` otherwise. This is a convenience wrapper around scanning `QueryKeyboard()`.
+
+<ParamField path="ch" type="int" required>
+  ASCII character code (32–126), `8` (Backspace), `10` (Enter), or a `KEY_*` constant.
+</ParamField>
+
+---
+
+## `QueryKeyboardRaw`
+
+```c
+unsigned char* QueryKeyboardRaw();
+```
+
+Returns a pointer to the internal `active_keycodes` array (8 bytes). Each non-zero byte is the raw **X11 keycode** of a currently held key — as reported by `XKeyEvent.keycode`, before any keysym translation. This is useful for keys that have no printable ASCII mapping, such as modifier keys.
+
+<Note>
+  Raw keycodes are hardware-layout-dependent and vary between keyboards. Use `QueryKeysymDown` for portable modifier-key detection.
+</Note>
+
+<Warning>
+  As with `QueryKeyboard`, do not free the returned pointer. The array is modified on every key event.
+</Warning>
+
+---
+
+## `QueryKeysymDown`
+
+```c
+int QueryKeysymDown(unsigned long keysym);
+```
+
+Returns `1` if the key corresponding to the X11 keysym `keysym` is currently pressed, `0` otherwise. Internally calls `XKeysymToKeycode` to resolve the keysym to a keycode, then checks it against `active_keycodes`. Returns `0` immediately if the keysym has no keycode mapping on the current keyboard.
+
+<ParamField path="keysym" type="unsigned long" required>
+  An X11 keysym constant. Include `<X11/keysym.h>` (or `<X11/XF86keysym.h>` for media keys) to access the `XK_*` constants.
+</ParamField>
+
+### Common KeySym Values
+
+Include `<X11/keysym.h>` to use these constants with `QueryKeysymDown`:
+
+| KeySym Constant | Description |
+|---|---|
+| `XK_Shift_L` | Left Shift |
+| `XK_Shift_R` | Right Shift |
+| `XK_Control_L` | Left Control |
+| `XK_Control_R` | Right Control |
+| `XK_Alt_L` | Left Alt |
+| `XK_Alt_R` | Right Alt |
+| `XK_Super_L` | Left Super / Meta (Windows key) |
+| `XK_Caps_Lock` | Caps Lock |
+| `XK_Tab` | Tab |
+| `XK_Return` | Return / Enter |
+| `XK_Escape` | Escape |
+| `XK_BackSpace` | Backspace |
+| `XK_Delete` | Delete |
+| `XK_Home` | Home |
+| `XK_End` | End |
+| `XK_Page_Up` | Page Up |
+| `XK_Page_Down` | Page Down |
+| `XK_Left` | Left arrow |
+| `XK_Right` | Right arrow |
+| `XK_Up` | Up arrow |
+| `XK_Down` | Down arrow |
+| `XK_F1` – `XK_F12` | Function keys F1–F12 |
+
+<Tip>
+  For arrow keys and function keys you can use either `QueryKeyDown` with a `KEY_*` constant or `QueryKeysymDown` with the matching `XK_*` constant — both work. `QueryKeysymDown` is the only portable option for modifier keys such as Shift, Control, and Alt.
+</Tip>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <X11/keysym.h>
+#include <stdio.h>
+
+void frame(int tick, float dt) {
+    /* --- Mouse polling --- */
+    int mx, my, mbtn;
+    QueryMouse(&mx, &my, &mbtn);
+
+    if (mbtn == 1) {
+        printf("Left button held at (%d, %d)\n", mx, my);
+    }
+
+    /* --- High-level key check --- */
+    if (QueryKeyDown('w') || QueryKeyDown(KEY_UP)) {
+        printf("Move up\n");
+    }
+    if (QueryKeyDown('s') || QueryKeyDown(KEY_DOWN)) {
+        printf("Move down\n");
+    }
+
+    /* --- Modifier key check via keysym --- */
+    if (QueryKeysymDown(XK_Shift_L) || QueryKeysymDown(XK_Shift_R)) {
+        printf("Shift held\n");
+    }
+
+    /* --- Iterate raw keyboard state --- */
+    unsigned char* keys = QueryKeyboard();
+    for (int i = 0; i < 8; i++) {
+        if (keys[i] != 0) {
+            printf("Held key code: %d\n", (int)keys[i]);
+        }
+    }
+
+    /* --- Raw keycode scan --- */
+    unsigned char* codes = QueryKeyboardRaw();
+    for (int i = 0; i < 8; i++) {
+        if (codes[i] != 0) {
+            printf("Held X11 keycode: %d\n", (int)codes[i]);
+        }
+    }
+}
+
+int main() {
+    CreateWindow(800, 600, "Input Demo", CLR_BLACK);
+    MainWindowLoop(60, frame);
+    return 0;
+}
+```

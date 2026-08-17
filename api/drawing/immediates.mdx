@@ -1,0 +1,208 @@
+---
+title: "Immediate-Mode Drawing Functions — LWXGL"
+sidebarTitle: "Immediates"
+description: "Reference for ImmediateText, ImmediateTextF, ImmediateRect, ImmediateEllipse, and ImmediateLine: per-frame drawing on the LWXGL backbuffer."
+---
+
+Immediate drawing functions write directly to the LWXGL backbuffer every frame. Unlike element-based drawing, they produce no persistent state — the output exists only for the duration of the current frame. Call these functions inside the `on_every` callback passed to `MainWindowLoop` so they are re-issued each frame. All color arguments accept the `CLR_*` constants defined in `libLWXGL.h`; pass `CLR_NONE` (`-1`) wherever a color is optional.
+
+---
+
+## ImmediateText
+
+```c
+void ImmediateText(int x, int y, const char* str, int color);
+```
+
+Draws a null-terminated string onto the backbuffer. Multi-line text is supported: each `\n` character starts a new line. Internally, `y` is offset by `+11` px before the first `XDrawString` call to align the text baseline, and each subsequent line advances `y` by `15` px.
+
+<ParamField path="x" type="int" required>
+  Left edge of the text block in window pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the text block in window pixels. Internally offset by +11 px before drawing.
+</ParamField>
+
+<ParamField path="str" type="const char*" required>
+  Null-terminated string to draw. Embed `\n` for multi-line output; lines are spaced 15 px apart.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  `CLR_*` color constant for the text foreground.
+</ParamField>
+
+---
+
+## ImmediateTextF
+
+```c
+void ImmediateTextF(int x, int y, int color, const char* fmt, ...);
+```
+
+`printf`-style variant of `ImmediateText`. The format string is expanded with `vsnprintf` into a stack-allocated buffer (via `alloca`) and then forwarded to `ImmediateText`. Note the non-obvious parameter order: `color` precedes `fmt`.
+
+<ParamField path="x" type="int" required>
+  Left edge of the text block in window pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the text block in window pixels.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  `CLR_*` color constant. This comes **before** `fmt` in the signature.
+</ParamField>
+
+<ParamField path="fmt" type="const char*" required>
+  `printf`-style format string.
+</ParamField>
+
+<ParamField path="..." type="variadic">
+  Arguments consumed by `fmt`.
+</ParamField>
+
+<Warning>
+  The formatted buffer is allocated on the stack with `alloca`. Very long format results can overflow the stack. Keep formatted output to a few hundred characters or less.
+</Warning>
+
+---
+
+## ImmediateRect
+
+```c
+void ImmediateRect(int x, int y, int w, int h, int fg, int bg);
+```
+
+Draws a filled rectangle with an optional border. The fill is drawn first with `XFillRectangle` over the full `w × h` area; the border is then drawn with `XDrawRectangle` at `(x, y, w-1, h-1)` so the outline sits inside the bounding box. Either layer can be suppressed by passing `CLR_NONE`.
+
+<ParamField path="x" type="int" required>
+  Left edge of the rectangle.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the rectangle.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Border color (`CLR_*`). Pass `CLR_NONE` to skip the border.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color (`CLR_*`). Pass `CLR_NONE` to skip the fill.
+</ParamField>
+
+---
+
+## ImmediateEllipse
+
+```c
+void ImmediateEllipse(int x, int y, int w, int h, int fg, int bg);
+```
+
+Draws an ellipse inscribed in the bounding box `(x, y, w, h)`. The fill is applied first with `XFillArc`; the outline is drawn on top with `XDrawArc`. Either layer can be suppressed by passing `CLR_NONE`.
+
+<ParamField path="x" type="int" required>
+  Left edge of the bounding box.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the bounding box.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the bounding box in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the bounding box in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Outline color (`CLR_*`). Pass `CLR_NONE` to skip.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color (`CLR_*`). Pass `CLR_NONE` to skip.
+</ParamField>
+
+---
+
+## ImmediateLine
+
+```c
+void ImmediateLine(int x1, int y1, int x2, int y2, int color);
+```
+
+Draws a straight line between two points using `XDrawLine`.
+
+<ParamField path="x1" type="int" required>
+  X coordinate of the start point.
+</ParamField>
+
+<ParamField path="y1" type="int" required>
+  Y coordinate of the start point.
+</ParamField>
+
+<ParamField path="x2" type="int" required>
+  X coordinate of the end point.
+</ParamField>
+
+<ParamField path="y2" type="int" required>
+  Y coordinate of the end point.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Line color (`CLR_*`).
+</ParamField>
+
+---
+
+## Example
+
+The snippet below shows all five immediate functions used inside the `on_every` frame callback.
+
+```c
+#include "libLWXGL.h"
+
+static int mouse_x, mouse_y, mouse_btn;
+
+void on_every(int frame, float dt) {
+    QueryMouse(&mouse_x, &mouse_y, &mouse_btn);
+
+    /* Filled rectangle acting as a HUD background */
+    ImmediateRect(8, 8, 200, 60, CLR_GRAY, CLR_BLACK);
+
+    /* FPS counter in the top-left corner */
+    ImmediateTextF(12, 12, CLR_WHITE, "frame=%d  dt=%.2fms", frame, dt * 1000.0f);
+
+    /* Mouse position readout on a second line */
+    ImmediateTextF(12, 27, CLR_LGRAY, "mouse=%d,%d btn=%d", mouse_x, mouse_y, mouse_btn);
+
+    /* Crosshair at the mouse cursor */
+    ImmediateLine(mouse_x - 8, mouse_y, mouse_x + 8, mouse_y, CLR_LRED);
+    ImmediateLine(mouse_x, mouse_y - 8, mouse_x, mouse_y + 8, CLR_LRED);
+
+    /* Indicator ellipse near the cursor */
+    ImmediateEllipse(mouse_x - 12, mouse_y - 12, 24, 24, CLR_YELLOW, CLR_NONE);
+}
+
+int main(void) {
+    CreateWindow(800, 600, "Immediates Demo", CLR_BLACK);
+    MainWindowLoop(60, on_every);
+    DeleteWindow();
+    return 0;
+}
+```
+
+<Note>
+  Immediate calls are not accumulated between frames. Any shape you want to appear on a given frame must be re-issued during that frame's `on_every` invocation.
+</Note>

@@ -1,0 +1,184 @@
+---
+title: "Scrollable Windows and Resizing in LWXGL"
+sidebarTitle: "Scroll & Resize"
+description: "Add a scrollable virtual canvas larger than the visible window to your LWXGL app, and enable resizable windows with layout callbacks."
+---
+
+LWXGL supports two related but distinct window features: a **scrollable virtual canvas** that is taller than the visible viewport, and **resizable windows** that invoke a callback whenever the user drags the window edge. The two can be combined, though there are constraints to be aware of when used together.
+
+---
+
+## Scrollable canvas
+
+By default, the internal back-buffer matches the window height exactly. `ReserveScroll` enlarges the back-buffer to a virtual height and adds a scrollbar, letting the user reveal content that lies below the viewport.
+
+```c
+void ReserveScroll(int height, int scrollbar_color,
+                   void (*Scroll)(int offset));
+```
+
+<Warning>
+`ReserveScroll` must be called **before** `CreateWindow`. Calling it after the window is open has no effect (`window != None` is checked internally).
+</Warning>
+
+| Parameter | Description |
+|---|---|
+| `height` | Total virtual canvas height in pixels. Must be greater than the window height passed to `CreateWindow`. |
+| `scrollbar_color` | Palette color index for the scrollbar thumb and track. Pass `-1` to render the scrollbar invisibly (scrolling still works). |
+| `Scroll` | Callback invoked each time the scroll offset changes. Receives the new scroll offset in pixels as its only argument. Pass `NULL` if you don't need the notification. |
+
+```c
+void on_scroll(int offset) {
+    printf("Scrolled to y=%d\n", offset);
+}
+
+// 2000px virtual height, light-gray scrollbar
+ReserveScroll(2000, CLR_LGRAY, on_scroll);
+CreateWindow(640, 480, "Scroll Demo", CLR_BLACK);
+```
+
+---
+
+## How scrolling works
+
+The window displays a `win_h`-pixel tall viewport into the full `height`-pixel virtual canvas. The user scrolls with the **mouse wheel** — each wheel tick moves the viewport by **45 pixels**.
+
+Elements are positioned in **virtual canvas coordinates**. A button at `y = 600` is only visible when the user has scrolled past `y = 600 - win_h`.
+
+```c
+// Current scroll position in pixels
+int offset = QueryScroll();
+```
+
+`QueryScroll()` returns the number of pixels the viewport has been scrolled down from the top. Use it to implement parallax backgrounds, sticky headers, or visibility checks:
+
+```c
+void on_frame(int tick, float dt) {
+    int scroll = QueryScroll();
+
+    // Sticky header: always draw at the top of the visible area
+    ImmediateRect(0, scroll, 640, 30, CLR_NONE, CLR_GRAY);
+    ImmediateText(8, scroll + 8, "My App", CLR_WHITE);
+}
+```
+
+---
+
+## Scrollbar appearance
+
+The scrollbar occupies a fixed **9-pixel wide** strip on the right edge of the window. The thumb height is proportional to `win_h / virtual_height`, so it shrinks as the virtual canvas gets taller relative to the viewport. The thumb's vertical position tracks the current scroll offset.
+
+Setting `scrollbar_color = -1` makes the scrollbar invisible while keeping scroll functionality intact — useful if you want to draw a custom scrollbar using immediate-mode or canvas primitives.
+
+---
+
+## EnableResizing
+
+By default, LWXGL sets `PMinSize` and `PMaxSize` hints to lock the window to its initial dimensions. Call `EnableResizing` after `CreateWindow` to allow the user to drag the window border:
+
+```c
+void EnableResizing(void (*Resize)(int w, int h));
+```
+
+The `Resize` callback is invoked with the new `w` and `h` whenever the window manager delivers a `ConfigureNotify` event with changed dimensions. Use it to reposition elements, resize canvases, or recalculate layout.
+
+```c
+void on_resize(int w, int h) {
+    // Stretch the background canvas to the new window size
+    ElemModifyBounds(1, 0, 0, w, h);
+    RedrawAllImages();
+}
+
+// Call after CreateWindow
+EnableResizing(on_resize);
+```
+
+<Note>
+`EnableResizing` only removes the WM size hints. The window manager is still free to impose its own minimum/maximum constraints depending on the desktop environment.
+</Note>
+
+---
+
+## Combined scrolling and resizing
+
+When both `ReserveScroll` and `EnableResizing` are active, the window height can grow — but it is automatically capped at the virtual canvas height. This prevents the viewport from exceeding the canvas, which would expose uninitialized back-buffer pixels.
+
+```c
+// Virtual canvas is 1500px tall
+ReserveScroll(1500, CLR_LGRAY, NULL);
+CreateWindow(640, 480, "Scroll + Resize", CLR_BLACK);
+EnableResizing(on_resize);
+// Window can grow up to 1500px tall; scrollbar disappears at that point
+```
+
+---
+
+## SetWindowTitle and SetWindowColor
+
+Two additional window configuration functions are available at any time after `CreateWindow`:
+
+```c
+void SetWindowTitle(const char* title);
+```
+
+Changes the title bar text by calling `XStoreName`. Takes effect immediately.
+
+```c
+void SetWindowColor(int color);
+```
+
+Changes the background fill color used to clear the back-buffer each frame. Accepts a palette index (0–15). The new color appears on the next rendered frame.
+
+```c
+SetWindowTitle("Level 2 — The Caverns");
+SetWindowColor(CLR_BLACK);
+```
+
+---
+
+## Scrollable list example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+#define ITEM_COUNT 40
+#define ITEM_H     30
+#define WIN_H      480
+#define WIN_W      500
+
+static int selected = -1;
+
+void make_item_click(int i); // forward declaration per-item
+
+void on_frame(int tick, float dt) {
+    int scroll = QueryScroll();
+
+    // Sticky header
+    ImmediateRect(0, scroll, WIN_W, 24, CLR_NONE, CLR_GRAY);
+    ImmediateText(6, scroll + 4, "Item List", CLR_WHITE);
+}
+
+int main(void) {
+    ReserveScroll(ITEM_COUNT * ITEM_H + 30, CLR_LGRAY, NULL);
+    CreateWindow(WIN_W, WIN_H, "Scrollable List", CLR_BLACK);
+
+    for (int i = 0; i < ITEM_COUNT; i++) {
+        char label[32];
+        snprintf(label, sizeof(label), "Item %d", i + 1);
+
+        // Stagger button IDs starting at 1
+        CreateButton(i + 1,
+                     10, 30 + i * ITEM_H,
+                     460, ITEM_H - 2,
+                     CLR_LGRAY, CLR_WHITE, CLR_CYAN,
+                     label, NULL);
+    }
+
+    EnableResizing(NULL);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```

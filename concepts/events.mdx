@@ -1,0 +1,201 @@
+---
+title: "Event Handling in LWXGL"
+sidebarTitle: "Events"
+description: "LWXGL processes X11 events each frame. Attach callbacks for keyboard input, mouse clicks, window resize, scroll, and pointer movement."
+---
+
+At the start of every frame, `MainWindowLoop` drains the X11 event queue with `XPending`/`XNextEvent` before invoking the render pass. Each event is dispatched through an internal handler map. LWXGL processes built-in interactions first (button clicks, input capture, modal intercepts) and only forwards the event to your registered callback if nothing handled it internally.
+
+## Event Callbacks
+
+Register callbacks once, after `CreateWindow` returns and before `MainWindowLoop` is called.
+
+### Key Events
+
+```c
+void EventAttachKey(void (*Key)(int key));
+```
+
+**Callback signature:**
+```c
+void on_key(int key);
+```
+
+`key` is the ASCII character code of the pressed key, or one of the `KEY_` constants for non-printable keys. The callback is **not** called when an Input element or a modal dialog has focus — those consume keystrokes internally.
+
+### Mouse Click Events
+
+```c
+void EventAttachClick(void (*Click)(int x, int y, int btn));
+```
+
+**Callback signature:**
+```c
+void on_click(int x, int y, int btn);
+```
+
+Called on mouse button **release** when the cursor is not over any UI element and no modal is open. `x` and `y` are window-relative pixel coordinates. `btn` is the X11 button number:
+
+| `btn` | Button |
+|---|---|
+| `1` | Left |
+| `2` | Middle |
+| `3` | Right |
+| `4` | Scroll up |
+| `5` | Scroll down |
+
+### Window Close Event
+
+```c
+void EventAttachDelete(int (*on_exit)(void));
+```
+
+**Callback signature:**
+```c
+int on_exit(void);
+```
+
+Called when the user clicks the window manager's close button. Return `1` to allow the window to close, or `0` to cancel the close (e.g. to show a confirmation dialog first). If no callback is attached, the close button always closes the window.
+
+### Pointer Move Events
+
+```c
+void EventAttachMove(void (*Move)(int x, int y));
+```
+
+**Callback signature:**
+```c
+void on_move(int x, int y);
+```
+
+Called on every `MotionNotify` event with the current cursor position. When the cursor leaves the window, the callback fires one final time with `x = -1, y = -1`.
+
+### Window Resize
+
+```c
+void EnableResizing(void (*Resize)(int w, int h));
+```
+
+Calling `EnableResizing` removes the fixed-size window manager hints set by `CreateWindow`, allowing the user to resize the window. The callback is called with the new pixel dimensions after each `ConfigureNotify` event.
+
+<Note>
+`EnableResizing` must be called after `CreateWindow`. If `ReserveScroll` was used, horizontal resizing is still allowed but vertical height is capped at the scroll backing-store height.
+</Note>
+
+## Key Constants
+
+Non-printable keys that do not map to ASCII are represented by the following constants:
+
+| Constant | Value | Key |
+|---|---|---|
+| `KEY_LEFT` | `170` | Left arrow |
+| `KEY_RIGHT` | `171` | Right arrow |
+| `KEY_UP` | `172` | Up arrow |
+| `KEY_DOWN` | `173` | Down arrow |
+| `KEY_FN` | `150` | Base for function keys |
+
+Function keys `F1`–`F12` are encoded as `KEY_FN + n`, where `n` is 1–12:
+
+```c
+void on_key(int key) {
+    if (key == KEY_FN + 1)  { /* F1 pressed */ }
+    if (key == KEY_FN + 5)  { /* F5 pressed */ }
+    if (key == KEY_LEFT)    { /* Left arrow */ }
+}
+```
+
+## Built-In Element Event Handling
+
+LWXGL intercepts certain events before they reach your callbacks. This is handled in the `EButtonRelease` and `EKeyPress` internal handlers, which iterate elements in **reverse ID order** (highest ID first) and stop at the first match.
+
+<Steps>
+  <Step title="Button onclick">
+    A left-button release over a Button element (`type 1`) calls that button's `onclick` function and returns without forwarding to `EventAttachClick`.
+  </Step>
+  <Step title="Checkbox toggle">
+    A left-button release over a Checkbox element (`type 5`) flips its `checked` state and returns.
+  </Step>
+  <Step title="Input capture">
+    Any key press while the mouse is over an Input element (`type 2`) is consumed by that field. Printable characters are appended up to `max` length; Backspace (`key == 8`) removes the last character.
+  </Step>
+  <Step title="Console scroll">
+    A scroll-wheel event (buttons 4/5) over a Console element (`type 6`) scrolls the console view by 3 lines and returns without firing your click callback.
+  </Step>
+  <Step title="Modal intercept">
+    While a modal dialog is open (`QueryModalOpen()` returns non-zero), **all** button-release and key-press events are routed exclusively to the modal. Element event handling and user click/key callbacks are suppressed.
+  </Step>
+</Steps>
+
+## Scroll Events
+
+To make the window taller than the viewport and add a scrollbar, call `ReserveScroll` **before** `CreateWindow`:
+
+```c
+void ReserveScroll(int height, int scrollbar_color, void (*Scroll)(int offset));
+```
+
+| Parameter | Description |
+|---|---|
+| `height` | Total backing-store height in pixels (must be > window height) |
+| `scrollbar_color` | Palette index for the scrollbar track and thumb |
+| `Scroll` | Callback invoked when the scroll position changes; receives the new pixel offset |
+
+The current scroll offset can be read at any time with `QueryScroll()`. Element positions and mouse hit coordinates are automatically adjusted by the scroll offset internally.
+
+```c
+void on_scroll(int offset) {
+    printf("Scrolled to y=%d\n", offset);
+}
+
+// Before CreateWindow:
+ReserveScroll(2000, CLR_GRAY, on_scroll);
+```
+
+## Code Example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+static void on_key(int key) {
+    if (key == KEY_UP)   printf("Up arrow\n");
+    if (key == KEY_DOWN) printf("Down arrow\n");
+    if (key == KEY_FN + 1) printf("F1 pressed\n");
+    if (key >= 32 && key < 127) printf("Char: %c\n", key);
+}
+
+static void on_click(int x, int y, int btn) {
+    if (btn == 1) printf("Left click at (%d, %d)\n", x, y);
+}
+
+static void on_move(int x, int y) {
+    if (x == -1) printf("Cursor left window\n");
+}
+
+static int on_close(void) {
+    /* return 0 to cancel, 1 to allow */
+    return 1;
+}
+
+static void on_resize(int w, int h) {
+    printf("Resized to %dx%d\n", w, h);
+    /* reposition elements to fit new size */
+    ElemModifyBounds(0, w - 110, 10, -1, -1);
+}
+
+int main(void) {
+    if (CreateWindow(800, 600, "Events Demo", CLR_BLACK) != 0) return 1;
+
+    EventAttachKey(on_key);
+    EventAttachClick(on_click);
+    EventAttachMove(on_move);
+    EventAttachDelete(on_close);
+    EnableResizing(on_resize);
+
+    CreateButton(0, 690, 10, 100, 28, 0xF1, 0x91, 0x81, "Quit", DeleteWindow);
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```

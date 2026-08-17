@@ -1,0 +1,195 @@
+---
+title: "Element Management Functions — LWXGL API"
+sidebarTitle: "Management"
+description: "Reference for DeleteElement, ElemModifyBounds, ElemSetVisible, ElemInside, GetElement, and SetTooltip for managing LWXGL elements."
+---
+
+Every element created with a `Create*` function is stored in a global slot array indexed by its integer ID. The management functions operate on that array to delete elements, reposition them, toggle their visibility, query whether the cursor is inside them, access the underlying struct directly, and attach hover tooltips. These functions work uniformly across all element types — text, buttons, inputs, rects, consoles, and the rest.
+
+---
+
+## DeleteElement
+
+```c
+void DeleteElement(int id);
+```
+
+Deletes the element at `id` and frees all associated memory. Cleanup is type-aware:
+
+- **Text** (copied): frees the duplicated string.
+- **Image**: destroys the `XImage`, frees the pixel buffers, and frees the `Pixmap`.
+- **OpenGL**: destroys the `GLXContext`, `GLXPixmap`, and `Pixmap`.
+- **All types**: frees the tooltip string if present, then deletes the `Element` struct and sets the slot to `NULL`.
+
+Safe to call when the slot is already `NULL` or when `id` is beyond the current array size.
+
+<ParamField path="id" type="int" required>
+  ID of the element to delete.
+</ParamField>
+
+<Warning>
+  After calling `DeleteElement(id)`, any pointers previously obtained from `GetElement(id)` or `GetInput(id)` are dangling. Do not dereference them.
+</Warning>
+
+---
+
+## ElemModifyBounds
+
+```c
+void ElemModifyBounds(int id, int x, int y, int w, int h);
+```
+
+Moves and/or resizes an element in-place. The change takes effect on the next rendered frame. Pass `-1` for `w` or `h` to leave those dimensions unchanged; `x` and `y` are always updated.
+
+<ParamField path="id" type="int" required>
+  ID of an existing element.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  New horizontal position in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  New vertical position in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  New width in pixels, or `-1` to leave unchanged.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  New height in pixels, or `-1` to leave unchanged.
+</ParamField>
+
+---
+
+## ElemSetVisible
+
+```c
+void ElemSetVisible(int id, int visible);
+```
+
+Shows or hides an element. Hidden elements (`visible = 0`) are skipped during rendering and do not receive mouse events — `ElemInside` always returns `0` for a hidden element.
+
+<ParamField path="id" type="int" required>
+  ID of an existing element.
+</ParamField>
+
+<ParamField path="visible" type="int" required>
+  `1` to show the element, `0` to hide it.
+</ParamField>
+
+---
+
+## ElemInside
+
+```c
+int ElemInside(int id);
+```
+
+Returns `1` if the mouse cursor is currently inside the element's bounds, `0` otherwise. The function accounts for three special cases:
+
+1. **Modal open** — always returns `0` while a modal dialog is active.
+2. **Hidden element** — always returns `0` if `v == 0`.
+3. **Overlap** — if two elements share the cursor position, only the one with the **higher** ID returns `1`; the lower-ID element is occluded.
+
+For checkboxes, the hit area includes the label text: `x + size + 10 + strlen(label) * 9` pixels wide.
+
+<ParamField path="id" type="int" required>
+  ID of an existing element.
+</ParamField>
+
+Returns `1` if the cursor is inside and no higher-ID element overlaps the same point, otherwise `0`.
+
+---
+
+## GetElement
+
+```c
+Element* GetElement(int id);
+```
+
+Returns a raw pointer to the `Element` struct for direct field access. The struct layout is:
+
+```c
+typedef struct {
+    int x, y, w, h; // Position and dimensions
+    int v;          // Visible: 1 = shown, 0 = hidden
+    int type;       // 0=Text 1=Button 2=Input 3=Rect 4=Image
+                    // 5=Checkbox 6=Console 7=Ellipse 8=OpenGL
+    void *elem;     // Pointer to the type-specific data struct
+    char *tooltip;  // Heap string, or NULL
+} Element;
+```
+
+<ParamField path="id" type="int" required>
+  ID of an existing element.
+</ParamField>
+
+<Warning>
+  The returned pointer is valid only until `DeleteElement(id)` is called. Modifying `elem` directly without understanding the type-specific struct layout will corrupt state.
+</Warning>
+
+---
+
+## SetTooltip
+
+```c
+void SetTooltip(int id, const char* tooltip);
+```
+
+Attaches a tooltip string to an element. When the cursor is inside the element's bounds, the tooltip is rendered at the bottom of the window. The string is duplicated with `strdup` internally, so the caller may free or modify the original after the call. Any previously set tooltip is freed before the new one is stored.
+
+Pass `NULL` to remove an existing tooltip without setting a new one.
+
+<ParamField path="id" type="int" required>
+  ID of an existing element.
+</ParamField>
+
+<ParamField path="tooltip" type="const char*" required>
+  Tooltip string to display, or `NULL` to remove the current tooltip.
+</ParamField>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+static const char *lbl_hide = "Hide panel";
+static const char *lbl_move = "Move panel";
+
+void on_hide(void) {
+    // Toggle the visibility of element 10.
+    Element *e = GetElement(10);
+    ElemSetVisible(10, e->v ? 0 : 1);
+}
+
+void on_move(void) {
+    // Shift element 10 right by 20 pixels, keep size.
+    Element *e = GetElement(10);
+    ElemModifyBounds(10, e->x + 20, e->y, -1, -1);
+}
+
+void setup(void) {
+    // A panel rect.
+    CreateRect(10, 50, 50, 200, 100, CLR_GRAY, CLR_BLACK);
+    SetTooltip(10, "Main panel");
+
+    CreateButton(11, 10, 10, 90, 24, 0x88, 0x7F, 0x80, lbl_hide, on_hide);
+    CreateButton(12, 110, 10, 90, 24, 0x88, 0x7F, 0x80, lbl_move, on_move);
+
+    SetTooltip(11, "Show or hide the panel");
+    SetTooltip(12, "Shift panel 20 px right");
+}
+
+void on_every(int tick, float dt) {
+    (void)dt;
+    // Log when the cursor enters element 10.
+    if (ElemInside(10)) {
+        if (tick % 60 == 0) printf("Cursor inside panel\n");
+    }
+}
+```

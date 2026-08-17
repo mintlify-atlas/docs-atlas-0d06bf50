@@ -1,0 +1,215 @@
+---
+title: "LWXGL Constants and Type Definitions"
+sidebarTitle: "Constants"
+description: "All #define constants and struct types in libLWXGL.h: color constants, key codes, modal types, task types, rendering order, and element structs."
+---
+
+`libLWXGL.h` defines every constant and type needed to use LWXGL. Include the header once at the top of your translation unit and all of the following become available. The header is C and C++ compatible; a small number of types (specifically `ConsoleElement`) are only available when compiling as C++.
+
+```c
+#include "libLWXGL.h"
+```
+
+---
+
+## Color Constants
+
+LWXGL uses a 16-color indexed palette modelled after the classic CGA/VGA terminal palette. Pass these constants wherever a color parameter is expected. The palette RGB values can be read with `PaletteQuery` and overridden with `PaletteModify`.
+
+| Constant | Value | Color |
+|---|---|---|
+| `CLR_NONE` | `-1` | Transparent / no color |
+| `CLR_BLACK` | `0x0` | Black |
+| `CLR_BLUE` | `0x1` | Dark Blue |
+| `CLR_GREEN` | `0x2` | Dark Green |
+| `CLR_CYAN` | `0x3` | Dark Cyan |
+| `CLR_RED` | `0x4` | Dark Red |
+| `CLR_MAGENTA` | `0x5` | Dark Magenta |
+| `CLR_ORANGE` | `0x6` | Orange |
+| `CLR_LGRAY` | `0x7` | Light Gray |
+| `CLR_GRAY` | `0x8` | Dark Gray |
+| `CLR_LBLUE` | `0x9` | Light Blue |
+| `CLR_LGREEN` | `0xA` | Light Green |
+| `CLR_LCYAN` | `0xB` | Light Cyan |
+| `CLR_LRED` | `0xC` | Light Red |
+| `CLR_LMAGENTA` | `0xD` | Light Magenta |
+| `CLR_YELLOW` | `0xE` | Yellow |
+| `CLR_WHITE` | `0xF` | White |
+
+`CLR_NONE` (`-1`) signals transparency or "no fill" depending on the function receiving it. It is also aliased by the general `NONE` sentinel (see below).
+
+---
+
+## Key Constants
+
+Arrow keys and function keys have no printable ASCII representation, so LWXGL maps them to values in the range 150–173. These constants are used with `EventAttachKey` callbacks and with `QueryKeyDown`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `KEY_LEFT` | `170` | Left arrow key |
+| `KEY_RIGHT` | `171` | Right arrow key |
+| `KEY_UP` | `172` | Up arrow key |
+| `KEY_DOWN` | `173` | Down arrow key |
+| `KEY_FN` | `150` | Base for function keys |
+
+Function keys are offset from `KEY_FN`: F1 = `KEY_FN + 1` = `151`, F2 = `152`, … F12 = `162`. Backspace arrives as `8`; Enter/Return arrives as `10` (normalised from `13` inside the event handler).
+
+---
+
+## Modal Type Constants
+
+Passed as the `type` argument to `SpawnModal`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `MODAL_ALERT` | `0` | Alert dialog — message with a single OK button |
+| `MODAL_CONFIRM` | `1` | Confirm dialog — message with OK and Cancel buttons |
+| `MODAL_INPUT` | `2` | Input dialog — message, a text-entry field, OK, and Cancel |
+
+---
+
+## Task Type Constants
+
+Passed as the `type` argument to `NewQueuedTask`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `TASK_RUN_AFTER` | `0` | Run the task once after the specified delay |
+| `TASK_RUN_EVERY` | `1` | Run the task repeatedly on the specified interval |
+
+---
+
+## Rendering Order Constants
+
+Passed to `SetRenderingOrder` to control whether managed elements are composited before or after the per-frame callback supplied to `MainWindowLoop`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `ORDER_ELEM_FIRST` | `1` | Elements render **before** the per-frame callback |
+| `ORDER_ELEM_SECOND` | `0` | Elements render **after** the per-frame callback (default) |
+
+<Note>
+  The default order (`ORDER_ELEM_SECOND`) means your per-frame drawing code runs first and elements are drawn on top. Use `ORDER_ELEM_FIRST` if you need to overdraw elements with custom per-frame primitives.
+</Note>
+
+---
+
+## Miscellaneous Constants
+
+| Constant | Value | Description |
+|---|---|---|
+| `NONE` | `-1` | Generic sentinel value; equivalent to `CLR_NONE` in color contexts |
+
+---
+
+## Struct Definitions
+
+The following types are defined in `libLWXGL.h`. They are primarily used when accessing element internals via `GetElement`.
+
+```c
+/* X11 connection handles — filled by GetXConnection() */
+typedef struct {
+    Pixmap        bb;       /* Back-buffer pixmap */
+    XFontStruct*  font;     /* Current font */
+    Display*      dpy;      /* X11 display connection */
+    Window        win;      /* Application window */
+    GC            gc;       /* Graphics context */
+    unsigned long clrs[16]; /* Resolved color pixel values (indexed by CLR_*) */
+    int           scrn;     /* Default screen number */
+    Visual*       vis;      /* Visual used for the window */
+    int           depth;    /* Color depth in bits */
+    Colormap      cmap;     /* Colormap for the window */
+} XConnectionData;
+
+/* Text label element */
+typedef struct {
+    int        color;   /* CLR_* foreground color */
+    const char *text;   /* Pointer to the string (not owned) */
+    int        copied;  /* Non-zero if LWXGL made an internal copy of text */
+} TextElement;
+
+/* Clickable button element */
+typedef struct {
+    int        unpressed;          /* CLR_* color when idle */
+    int        hover;              /* CLR_* color when cursor is over it */
+    int        pressed;            /* CLR_* color when held */
+    const char *label;             /* Button label text */
+    void       (*onclick)(void);   /* Click callback */
+} ButtonElement;
+
+/* Single-line text input element */
+typedef struct {
+    int  inactive;      /* CLR_* background color when unfocused */
+    int  hover;         /* CLR_* background color when focused */
+    int  max;           /* Maximum number of characters accepted */
+    char input[128];    /* Current input buffer (null-terminated) */
+} InputElement;
+
+/* Filled rectangle element */
+typedef struct {
+    int fg; /* CLR_* border/foreground color */
+    int bg; /* CLR_* fill/background color */
+} RectElement;
+
+/* Raster image element */
+typedef struct {
+    XImage        *ximage;             /* X11 image structure */
+    unsigned char *data;               /* Current pixel data (RGBA) */
+    unsigned char *prev;               /* Previous frame pixel data */
+    char          *imgdata;            /* Raw image backing store */
+    struct {
+        int           height;          /* Font glyph height in pixels */
+        unsigned char *buffer;         /* Font bitmap data */
+    } fontdata;
+    Pixmap pixmap;                     /* Backing pixmap */
+} ImageElement;
+
+/* Checkbox element */
+typedef struct {
+    int        cb_col;   /* CLR_* color of the checkbox indicator */
+    int        txt_col;  /* CLR_* color of the label text */
+    const char *label;   /* Label text */
+    int        checked;  /* Non-zero when checked */
+} CheckboxElement;
+
+/* OpenGL-rendered region element */
+typedef struct {
+    GLXPixmap  glx_pixmap;    /* GLX off-screen pixmap */
+    Pixmap     x_pixmap;      /* Underlying X11 pixmap */
+    GLXContext ctx;            /* GLX rendering context */
+    int        border_color;  /* CLR_* border color (-1 for none) */
+} OpenGLElement;
+
+/* Filled ellipse element */
+typedef struct {
+    int fg; /* CLR_* border/foreground color */
+    int bg; /* CLR_* fill/background color */
+} EllipseElement;
+
+/* Generic element wrapper — returned by GetElement() */
+typedef struct {
+    int   x, y;       /* Position in window coordinates */
+    int   w, h;       /* Dimensions in pixels */
+    int   v;          /* Visibility flag (non-zero = visible) */
+    int   type;       /* Element type discriminant */
+    void  *elem;      /* Pointer to the type-specific struct above */
+    char  *tooltip;   /* Tooltip string, or NULL */
+} Element;
+```
+
+The `ConsoleElement` type is only available in C++ translation units:
+
+```cpp
+/* C++ only — scrollable text console element */
+typedef struct {
+    std::string data;        /* Full console text buffer */
+    int rows, cols;          /* Visible grid dimensions */
+    int scroll;              /* Current scroll offset (lines from top) */
+    int con_clr, txt_col;    /* CLR_* background and text colors */
+    int total_lines;         /* Total number of lines in the buffer */
+} ConsoleElement;
+```
+
+<Note>
+  `ConsoleElement` is wrapped in `#ifdef __cplusplus` in the header. If you are writing a C program and need to inspect a console element's internals via `GetElement`, you must define an equivalent struct manually or access it through a C++ wrapper.
+</Note>

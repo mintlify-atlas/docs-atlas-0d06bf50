@@ -1,0 +1,58 @@
+---
+title: "LWXGL: Lightweight X11 Graphics Library"
+sidebarTitle: "Introduction"
+description: "LWXGL is a C/C++ shared library that provides UI elements, drawing primitives, image support, and OpenGL integration for X11 desktop applications."
+---
+
+LWXGL is a C/C++ shared library for building desktop GUI applications on the X Window System. It gives you a set of stateful UI elements (buttons, inputs, labels, checkboxes, consoles), a suite of immediate-mode drawing primitives, raster image canvases with TGA and XBM file support, and first-class OpenGL integration — all through a single C-compatible header and a `‑lLWXGL` link flag.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="UI Elements" icon="window-restore">
+    Buttons, text labels, text inputs, checkboxes, scrollable console elements, labeled inputs, and modal dialogs — each addressed by an integer element ID.
+  </Card>
+  <Card title="Drawing Primitives" icon="pen-ruler">
+    Immediate-mode and retained rectangles, ellipses, lines, triangles, circles, and sprite rendering. All accept palette color indices and support fill/border color pairs.
+  </Card>
+  <Card title="Image & TGA Support" icon="image">
+    Raster image canvases backed by XImage, with support for loading indexed TGA and XBM files. Images can be manipulated per-pixel with a custom function via `ApplyPixelFunc`.
+  </Card>
+  <Card title="OpenGL Integration" icon="cube">
+    Create hardware-accelerated GLX viewports inside your window with `CreateOpenGL`. Convert TGA assets directly to GL textures with `GLConvertTGA`, and load OBJ models with `GLObjectListify`.
+  </Card>
+  <Card title="Event System" icon="bolt">
+    Attach callbacks for keyboard (`EventAttachKey`), mouse click (`EventAttachClick`), mouse move (`EventAttachMove`), and window-close (`EventAttachDelete`) events. Query keyboard state directly with `QueryKeyDown` or `QueryKeysymDown`.
+  </Card>
+  <Card title="Palette & Color System" icon="palette">
+    A 16-color indexed palette (indices `0x0`–`0xF`) with named `CLR_*` constants. The palette is mutable at runtime via `PaletteModify` and resets to defaults with `PaletteReset`.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+LWXGL is compiled into a single shared object, `libLWXGL.so`, and exposes its entire API through one header, `libLWXGL.h`. The header wraps all declarations in `extern "C"` so the same header works from both C and C++ translation units without modification.
+
+**Element ID system.** Every UI element is created with a caller-supplied integer ID. That ID is used in all subsequent calls that read, modify, or delete the element. IDs are not auto-assigned; you choose them and are responsible for keeping them unique.
+
+**16-color indexed palette.** All color arguments throughout the API are palette indices (`0`–`15`), not raw RGB values. The `CLR_*` constants (e.g. `CLR_WHITE`, `CLR_BLUE`) map to these indices. Colors can be remapped at runtime without changing any drawing calls.
+
+**Packed nibble colors.** Several element constructors accept packed byte arguments where the lower nibble is the fill/background palette index and the upper nibble is the border/text palette index. For example, `0xF4` means white (`0xF`) border with dark-red (`0x4`) fill.
+
+**Retained and immediate rendering.** Elements registered by `Create*` calls are retained and redrawn every frame automatically. `Immediate*` functions draw directly into the current frame's back-buffer and must be called from the per-frame callback; they do not persist across frames.
+
+**Back-buffer.** The library maintains an X11 `Pixmap` back-buffer. Each frame renders into that buffer and then blits it to the window, eliminating flicker.
+
+## Dependencies
+
+| Dependency | Purpose |
+|---|---|
+| X11 development headers (`libx11-dev`) | Window creation, event handling, GC, fonts |
+| OpenGL/GLX development headers (`libgl-dev`) | OpenGL element support, GLX context management |
+| GCC with C++17 support | The library itself is compiled with `‑std=gnu++17` |
+
+The runtime libraries (`libX11.so`, `libGL.so`) must also be present on the target machine.
+
+---
+
+Ready to get started? [Install LWXGL from source](/installation), then follow the [Quickstart guide](/quickstart) to build your first window.

@@ -1,0 +1,164 @@
+---
+title: "Window Lifecycle in LWXGL"
+sidebarTitle: "Window Lifecycle"
+description: "How LWXGL manages the X11 window: creation, the main render loop, event processing, and proper cleanup with TerminateWindow."
+---
+
+Every LWXGL application follows three sequential phases: create the window and allocate X11 resources, run the blocking main loop that drives rendering and event processing, then tear down and release those resources. Skipping or reordering any phase produces undefined behavior.
+
+## Creation Phase
+
+`CreateWindow` opens the X11 display, allocates the 16-color palette in the server colormap, loads the default font, creates the backing-store pixmap, and maps the window to the screen.
+
+```c
+int CreateWindow(int w, int h, const char* name, int bgcolor);
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `w` | `int` | Window width in pixels |
+| `h` | `int` | Window height in pixels |
+| `name` | `const char*` | Window title string |
+| `bgcolor` | `int` | Background fill color (palette index 0–15) |
+
+**Return codes:**
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | `XOpenDisplay` failed — no display available |
+| `2` | Font `9x15` could not be loaded |
+| `3` | A window is already open (`CreateWindow` was called twice) |
+| `127 + i` | `XAllocColor` failed for palette index `i` |
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    int rc = CreateWindow(800, 600, "My App", CLR_BLACK);
+    if (rc != 0) {
+        fprintf(stderr, "CreateWindow failed: %d\n", rc);
+        return EXIT_FAILURE;
+    }
+    /* ... setup, loop, cleanup ... */
+    return 0;
+}
+```
+
+## Pre-Loop Setup
+
+After `CreateWindow` returns `0`, you have a window but no UI elements and no loop. This is the window to:
+
+- Create UI elements with `CreateButton`, `CreateText`, `CreateInput`, `CreateRect`, `CreateImage`, `CreateCheckbox`, `CreateConsole`, `CreateEllipse`, or `CreateOpenGL`.
+- Attach event callbacks with `EventAttachKey`, `EventAttachClick`, `EventAttachMove`, and `EventAttachDelete`.
+- Call `EnableResizing` if the window should be user-resizable.
+
+<Warning>
+`ReserveScroll` is the **one exception**: it must be called **before** `CreateWindow`, because it configures the backing-store height used during window creation. Calling it after `CreateWindow` has no effect.
+</Warning>
+
+```c
+// ReserveScroll must come first
+ReserveScroll(2000, CLR_GRAY, on_scroll);
+
+int rc = CreateWindow(800, 600, "Scrollable App", CLR_BLACK);
+
+// Element creation and event attachment come after
+CreateButton(0, 10, 10, 120, 30, 0xF1, 0x71, 0x11, "Click Me", on_click);
+EventAttachKey(on_key);
+```
+
+## Main Loop
+
+`MainWindowLoop` blocks the calling thread, processing X11 events and rendering frames at the requested rate until `DeleteWindow` is called.
+
+```c
+void MainWindowLoop(int target_fps, void (*on_every)(int frame, float dt));
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `target_fps` | `int` | Target frame rate; the loop sleeps between frames to stay on pace |
+| `on_every` | callback | Called once per frame; may be `NULL` |
+
+**Frame callback signature:**
+
+```c
+void on_every(int frame, float dt);
+```
+
+- `frame` — monotonically increasing tick counter, starting at 0.
+- `dt` — seconds elapsed since the previous frame as a `float`.
+
+<Note>
+The frame callback is where you update application state, call `ImmediateRect`/`ImmediateText` drawing functions, or modify element properties before the frame is blitted to the screen.
+</Note>
+
+### Rendering Order
+
+By default elements are rendered before the frame callback, so anything drawn in `on_every` appears on top of all elements. Call `SetRenderingOrder` to flip this:
+
+```c
+void SetRenderingOrder(int order);
+```
+
+| Constant | Value | Effect |
+|---|---|---|
+| `ORDER_ELEM_SECOND` | `0` | Default — elements render first, `on_every` renders on top |
+| `ORDER_ELEM_FIRST` | `1` | `on_every` renders first, elements render on top |
+
+## Shutdown
+
+`DeleteWindow` signals that the loop should exit on the next iteration. It does **not** free any resources — it only sets an internal flag (or calls your `EventAttachDelete` callback first).
+
+```c
+void DeleteWindow(void);
+```
+
+Call it from anywhere: a button's `onclick` handler, a key callback, or the frame callback.
+
+After `MainWindowLoop` returns, call `TerminateWindow` to release every X11 resource allocated by `CreateWindow`:
+
+```c
+void TerminateWindow(void);
+```
+
+`TerminateWindow` frees all elements, allocated TGA images, fonts, GC, pixmaps, colormap entries, and closes the display connection.
+
+### Complete Lifecycle Pattern
+
+```c
+#include "libLWXGL.h"
+#include <stdlib.h>
+
+static void on_quit(void) { DeleteWindow(); }
+
+static void on_frame(int frame, float dt) {
+    /* per-frame logic */
+}
+
+int main(void) {
+    if (CreateWindow(800, 600, "My App", CLR_BLACK) != 0)
+        return EXIT_FAILURE;
+
+    CreateButton(0, 10, 10, 100, 28, 0x4F, 0xCF, 0xFF, "Quit", on_quit);
+
+    MainWindowLoop(60, on_frame);
+
+    TerminateWindow();
+    return 0;
+}
+```
+
+## Debug Overlay
+
+LWXGL has a built-in debug overlay you can toggle at runtime without recompiling.
+
+| Shortcut | Action |
+|---|---|
+| `F12` | Toggle the FPS counter and per-frame work-time graph |
+| `Ctrl+Escape` | Close the window (calls `DeleteWindow`) |
+
+The overlay shows the current FPS and a 60-sample rolling average of work time per frame in microseconds, which makes it easy to identify frame budget overruns.

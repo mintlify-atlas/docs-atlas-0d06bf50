@@ -1,0 +1,102 @@
+---
+title: "Install LWXGL from Source"
+sidebarTitle: "Installation"
+description: "Build libLWXGL.so from source using make, install to /usr/local/lib, and link your C or C++ program with -lLWXGL."
+---
+
+LWXGL is distributed as source code. You build the shared object yourself with a single `make` invocation, then install it system-wide so any program on the machine can link against it with `‑lLWXGL`. There are no pre-built binaries and no package manager entries.
+
+## Prerequisites
+
+You need the X11 development headers, OpenGL development headers, and a GCC toolchain that supports C++17. On Debian and Ubuntu you can install all three with:
+
+```bash
+sudo apt install libx11-dev libgl-dev gcc g++
+```
+
+Verify that `g++` supports C++17 before building:
+
+```bash
+g++ --version   # 7.1 or newer is sufficient
+```
+
+## Build and Install
+
+<Steps>
+  <Step title="Clone or download the repository">
+    Obtain the LWXGL source tree and enter the project root:
+
+    ```bash
+    git clone https://github.com/your-org/LWXGL.git
+    cd LWXGL
+    ```
+  </Step>
+
+  <Step title="Build libLWXGL.so">
+    Run `make` to compile the shared object:
+
+    ```bash
+    make
+    ```
+
+    This produces `libLWXGL.so` in the project root. To override the default optimization level (`O=2`), pass the `O` variable:
+
+    ```bash
+    make O=3   # maximum optimization
+    make O=0   # no optimization, useful for debugging
+    ```
+  </Step>
+
+  <Step title="Install to /usr/local/lib">
+    Copy the shared object and header to system directories and refresh the linker cache:
+
+    ```bash
+    sudo make install
+    ```
+
+    This runs the following three operations:
+
+    ```
+    cp libLWXGL.so /usr/local/lib
+    cp src/libLWXGL.h /usr/local/include
+    ldconfig
+    ```
+
+    After this step, `libLWXGL.h` is available system-wide as a standard include, and the dynamic linker can find `libLWXGL.so` by name.
+  </Step>
+</Steps>
+
+## Linking Your Program
+
+Add `‑lLWXGL` to your compiler command. No additional `-I` or `-L` flags are needed after installation:
+
+```bash
+gcc -o myapp myapp.c -lLWXGL
+```
+
+For C++ projects:
+
+```bash
+g++ -o myapp myapp.cc -lLWXGL
+```
+
+If your program also uses OpenGL directly, add `‑lGL` and `‑lX11`:
+
+```bash
+gcc -o myapp myapp.c -lLWXGL -lGL -lX11
+```
+
+<Note>
+  The Makefile compiles LWXGL itself with `g++ -std=gnu++17 -fPIC -shared`, so the library binary is C++ internally. The installed header `libLWXGL.h` wraps all declarations in `extern "C"`, making every symbol safe to call from plain C translation units without any name-mangling issues.
+</Note>
+
+<Tip>
+  After running `make install`, confirm the shared object is in place and visible to the dynamic linker:
+
+  ```bash
+  ls /usr/local/lib/libLWXGL.so
+  ldconfig -p | grep LWXGL
+  ```
+
+  The second command should print a line containing `libLWXGL.so` and its resolved path. If it prints nothing, run `sudo ldconfig` again and retry.
+</Tip>

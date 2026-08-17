@@ -1,47 +1,158 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with LWXGL"
+sidebarTitle: "Quickstart"
+description: "Build and run your first LWXGL window in under 5 minutes. Covers window creation, UI elements, the per-frame callback, and clean shutdown."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This guide walks you through building a small but complete LWXGL program: a 400×250 window with a blue background, an animated ellipse that bounces back and forth, a live elapsed-time display, and a quit button. Along the way you'll learn how to create a window, register a UI element, drive animation with the per-frame callback, and shut the application down cleanly.
 
 ## Prerequisites
 
-Before you begin, you must have:
+LWXGL must be installed on your system before compiling. See the [Installation guide](/installation) if you haven't done that yet.
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+## The Complete Example
 
-## Get started
+The program below is the canonical LWXGL starter. Save it as `example.c` and compile it as shown.
+
+```c
+#include <libLWXGL.h>
+
+void on_every_frame(int frame, float dt) {
+    static float circle_x = 50, circle_speed = 150;
+    ImmediateTextF(10, 10, CLR_WHITE, "Elapsed time: %.1f seconds", GetElapsedTime());
+    circle_x += circle_speed * dt;
+    if (circle_x >= 336 || circle_x <= 0) circle_speed *= -1;
+    ImmediateEllipse(circle_x, 80, 64, 64, CLR_WHITE, CLR_ORANGE);
+}
+
+int main() {
+    CreateWindow(400, 250, "Example Window", CLR_BLUE);
+    CreateButton(0, 270, 210, 120, 30, 0xF4, 0xF5, 0xF2, "Quit", DeleteWindow);
+    MainWindowLoop(60, on_every_frame);
+    TerminateWindow();
+}
+```
+
+Compile and run:
+
+```bash
+gcc -o example example.c -lLWXGL
+./example
+```
+
+## Step-by-Step Walkthrough
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
-
-    ```bash
-    npm install your-package
+  <Step title="CreateWindow — open the X11 window">
+    ```c
+    CreateWindow(400, 250, "Example Window", CLR_BLUE);
     ```
+
+    `CreateWindow` connects to the X display, allocates the 16-color palette, creates the window, and sets up the back-buffer. The four parameters are:
+
+    | Parameter | Value | Meaning |
+    |---|---|---|
+    | `w` | `400` | Window width in pixels |
+    | `h` | `250` | Window height in pixels |
+    | `name` | `"Example Window"` | Title bar text |
+    | `bgcolor` | `CLR_BLUE` | Palette index used to clear the background each frame |
+
+    `CLR_BLUE` is the constant `0x1` from the 16-color palette. Any `CLR_*` constant or raw palette index `0`–`15` is valid here.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
+  <Step title="CreateButton — register a UI element">
+    ```c
+    CreateButton(0, 270, 210, 120, 30, 0xF4, 0xF5, 0xF2, "Quit", DeleteWindow);
     ```
+
+    This registers a button with element ID `0`. The full signature is:
+
+    ```c
+    void CreateButton(int id, int x, int y, int w, int h,
+                      int unpressed, int hover, int pressed,
+                      const char* label, void (*onclick)(void));
+    ```
+
+    | Parameter | Value | Meaning |
+    |---|---|---|
+    | `id` | `0` | Element ID — your chosen integer handle |
+    | `x`, `y` | `270`, `210` | Position in the window (pixels) |
+    | `w`, `h` | `120`, `30` | Width and height in pixels |
+    | `unpressed` | `0xF4` | Color byte for the default state |
+    | `hover` | `0xF5` | Color byte when the cursor is over the button |
+    | `pressed` | `0xF2` | Color byte while the button is held down |
+    | `label` | `"Quit"` | Button text |
+    | `onclick` | `DeleteWindow` | Called with no arguments when clicked |
+
+    `DeleteWindow` is a built-in LWXGL function that signals the main loop to exit on the next tick.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
 
-    ```bash
-    your-cli start
+  <Step title="MainWindowLoop — start the render loop">
+    ```c
+    MainWindowLoop(60, on_every_frame);
     ```
+
+    This call blocks until the window is closed. It drives the frame loop at up to `60` frames per second, processes X11 events each tick, renders all registered elements, and calls `on_every_frame` once per frame. The per-frame callback must match this signature:
+
+    ```c
+    void callback(int frame, float dt);
+    ```
+
+    `frame` is the zero-based tick counter. `dt` is the actual elapsed time since the last frame in seconds (delta time), suitable for frame-rate-independent movement calculations.
+  </Step>
+
+  <Step title="The frame callback — immediates and animation">
+    ```c
+    void on_every_frame(int frame, float dt) {
+        static float circle_x = 50, circle_speed = 150;
+        ImmediateTextF(10, 10, CLR_WHITE, "Elapsed time: %.1f seconds", GetElapsedTime());
+        circle_x += circle_speed * dt;
+        if (circle_x >= 336 || circle_x <= 0) circle_speed *= -1;
+        ImmediateEllipse(circle_x, 80, 64, 64, CLR_WHITE, CLR_ORANGE);
+    }
+    ```
+
+    `Immediate*` functions draw directly into the current frame's back-buffer. They do not persist — you must call them every frame to keep them visible.
+
+    - `ImmediateTextF` works like `printf`: it formats a string and draws it at `(x, y)` in the given palette color.
+    - `GetElapsedTime()` returns the total seconds elapsed since the window was created as a `double`.
+    - `ImmediateEllipse(x, y, w, h, border_color, fill_color)` draws a filled ellipse. The `w` and `h` values are the bounding-box dimensions in pixels.
+    - Multiplying `circle_speed` by `dt` (seconds since last frame) keeps the animation speed constant regardless of actual frame rate.
+  </Step>
+
+  <Step title="TerminateWindow — clean up">
+    ```c
+    TerminateWindow();
+    ```
+
+    Called after `MainWindowLoop` returns, `TerminateWindow` frees every registered element, deallocates all TGA assets, releases the X11 GC and font, destroys the back-buffer Pixmap, frees the 16 palette color allocations, destroys the window, and closes the display connection. Always call it before your program exits to avoid resource leaks.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Understanding Button Color Bytes
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+<Note>
+  Button color arguments (`unpressed`, `hover`, `pressed`) are single-byte packed values. The **lower nibble** is the fill/background palette index and the **upper nibble** is the border and text palette index.
+
+  | Byte | Upper nibble (border/text) | Lower nibble (fill) | Meaning |
+  |---|---|---|---|
+  | `0xF4` | `0xF` = `CLR_WHITE` | `0x4` = `CLR_RED` | White text, dark-red fill — default state |
+  | `0xF5` | `0xF` = `CLR_WHITE` | `0x5` = `CLR_MAGENTA` | White text, magenta fill — hover state |
+  | `0xF2` | `0xF` = `CLR_WHITE` | `0x2` = `CLR_GREEN` | White text, green fill — pressed state |
+
+  This packed encoding is used wherever a single element needs to express both a foreground and background color in one argument.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="UI Elements" icon="table-layout" href="/concepts/elements">
+    Learn about all available element types: inputs, checkboxes, consoles, images, and OpenGL viewports.
+  </Card>
+  <Card title="Color Palette" icon="palette" href="/concepts/color-palette">
+    Explore the full 16-color palette, all CLR_ constants, and how to modify palette entries at runtime.
+  </Card>
+  <Card title="Drawing Guide" icon="pen-nib" href="/guides/drawing">
+    Dive into retained and immediate drawing primitives: rectangles, lines, triangles, sprites, and image canvases.
+  </Card>
+</CardGroup>

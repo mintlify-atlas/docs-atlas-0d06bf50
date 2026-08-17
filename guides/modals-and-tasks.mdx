@@ -1,0 +1,225 @@
+---
+title: "Modal Dialogs and Queued Tasks in LWXGL"
+sidebarTitle: "Modals & Tasks"
+description: "Display blocking alert, confirm, and input modal dialogs in LWXGL, and schedule one-shot or repeating tasks with the built-in task queue."
+---
+
+LWXGL provides two built-in asynchronous features: **modal dialogs** that overlay the window and suppress all other input until dismissed, and a **task queue** for running deferred or repeating callbacks at specified time intervals without blocking the render loop.
+
+---
+
+## Modal dialogs
+
+A modal is a small overlay window rendered on top of all elements. While a modal is active, element click events and keyboard events are routed exclusively to the modal — normal element interaction is suppressed until the modal is dismissed.
+
+```c
+void SpawnModal(int type, const char* msg,
+                void (*on_confirm)(const char* input));
+```
+
+| Parameter | Description |
+|---|---|
+| `type` | One of `MODAL_ALERT`, `MODAL_CONFIRM`, or `MODAL_INPUT`. |
+| `msg` | Text displayed inside the modal. |
+| `on_confirm` | Callback invoked when the user confirms. Receives `NULL` for alert/confirm, or a pointer to the typed string for input modals. Pass `NULL` if you don't need a callback. |
+
+### Modal types
+
+<CardGroup cols={3}>
+  <Card title="MODAL_ALERT (0)" icon="circle-info">
+    Displays `msg` with a single **OK** button. `on_confirm` is called with `NULL` when OK is clicked.
+  </Card>
+  <Card title="MODAL_CONFIRM (1)" icon="circle-question">
+    Displays `msg` with **OK** and **Cancel** buttons. `on_confirm` is called only when OK is clicked; cancelling dismisses the modal silently.
+  </Card>
+  <Card title="MODAL_INPUT (2)" icon="keyboard">
+    Displays `msg` above a text input field with **OK** and **Cancel**. `on_confirm` receives a pointer to the typed string (up to 150 characters) when OK is clicked.
+  </Card>
+</CardGroup>
+
+<Note>
+The input buffer for `MODAL_INPUT` is zeroed each time `SpawnModal` is called, so there is no leftover text from a previous invocation.
+</Note>
+
+### QueryModalOpen
+
+```c
+int QueryModalOpen();
+```
+
+Returns `1` if a modal is currently displayed, `0` otherwise. Use this to guard input handling or animation code that should pause while the user interacts with a modal.
+
+### Alert example
+
+```c
+void on_ok(const char* input) {
+    // input is NULL for MODAL_ALERT
+    printf("User acknowledged the alert\n");
+}
+
+SpawnModal(MODAL_ALERT, "Operation completed successfully.", on_ok);
+```
+
+### Confirm example
+
+```c
+static int pending_delete_id = -1;
+
+void on_delete_confirm(const char* input) {
+    // Called only if the user clicked OK
+    DeleteElement(pending_delete_id);
+    pending_delete_id = -1;
+}
+
+void request_delete(int id) {
+    pending_delete_id = id;
+    SpawnModal(MODAL_CONFIRM,
+               "Are you sure you want to delete this item?",
+               on_delete_confirm);
+}
+```
+
+### Input example
+
+```c
+void on_name_entered(const char* input) {
+    if (input && *input != '\0') {
+        printf("User entered: %s\n", input);
+        SetWindowTitle(input);
+    }
+}
+
+SpawnModal(MODAL_INPUT, "Enter a window title:", on_name_entered);
+```
+
+<Warning>
+Do not call `SpawnModal` from inside an `on_confirm` callback while the previous modal is still being dismissed. Use a queued task (below) to defer the second modal to the next frame.
+</Warning>
+
+---
+
+## Queued tasks
+
+The task queue lets you schedule callbacks to run at a future time without blocking the render loop. Tasks are evaluated at the **end of each frame**, after rendering and event processing are complete.
+
+```c
+void NewQueuedTask(int type, double run_after, void (*task)(void));
+```
+
+| Parameter | Description |
+|---|---|
+| `type` | `TASK_RUN_AFTER` (0) or `TASK_RUN_EVERY` (1). |
+| `run_after` | Delay in seconds before the first execution. |
+| `task` | Zero-argument callback to invoke. |
+
+### Task types
+
+**`TASK_RUN_AFTER` (0):** Calls `task()` exactly once, after `run_after` seconds have elapsed since `NewQueuedTask` was called. The task is then removed from the queue.
+
+**`TASK_RUN_EVERY` (1):** Calls `task()` repeatedly. The first invocation is aligned to the next multiple of `run_after` seconds from the current elapsed time (`ceil(elapsed / interval) * interval`), and then repeats every `run_after` seconds.
+
+### GetElapsedTime
+
+```c
+double GetElapsedTime();
+```
+
+Returns total elapsed time in seconds since `MainWindowLoop` started. Useful for time-based logic inside task callbacks or the `on_every` callback.
+
+### One-shot task example
+
+```c
+void show_welcome(void) {
+    SpawnModal(MODAL_ALERT, "Welcome to the app!", NULL);
+}
+
+// Show a welcome dialog 2 seconds after the loop starts
+NewQueuedTask(TASK_RUN_AFTER, 2.0, show_welcome);
+```
+
+### Repeating task example
+
+```c
+static int blink_state = 0;
+
+void blink_status(void) {
+    blink_state = !blink_state;
+    ElemSetVisible(99, blink_state);  // toggle a status indicator
+}
+
+// Toggle visibility every 0.5 seconds
+NewQueuedTask(TASK_RUN_EVERY, 0.5, blink_status);
+```
+
+### Combined example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+static double start_time = 0.0;
+
+void on_timeout(void) {
+    SpawnModal(MODAL_CONFIRM,
+               "Session has been idle for 30 seconds.\nContinue?",
+               NULL);
+}
+
+void log_uptime(void) {
+    printf("Uptime: %.1f seconds\n", GetElapsedTime());
+}
+
+void on_frame(int tick, float dt) {
+    if (!QueryModalOpen()) {
+        ImmediateTextF(10, 10, CLR_WHITE,
+                       "Elapsed: %.2fs", GetElapsedTime());
+    }
+}
+
+int main(void) {
+    CreateWindow(400, 200, "Task Demo", CLR_BLACK);
+
+    // Warn after 30 seconds of inactivity
+    NewQueuedTask(TASK_RUN_AFTER, 30.0, on_timeout);
+
+    // Log uptime every 5 seconds
+    NewQueuedTask(TASK_RUN_EVERY, 5.0, log_uptime);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```
+
+---
+
+## ChangeCursor
+
+```c
+void ChangeCursor(int cursor_font_glyph);
+```
+
+Changes the window cursor using an X11 cursor font glyph index. LWXGL automatically sets the cursor to glyph `68` (the standard left pointer) when `CreateWindow` is called. Pass `255` to make the cursor completely invisible — useful for custom cursor rendering or fullscreen applications.
+
+| Glyph | Cursor |
+|---|---|
+| `68` | Left pointer (default) |
+| `34` | Crosshair |
+| `52` | Hand pointer |
+| `150` | Watch / busy |
+| `255` | Invisible (LWXGL extension — not an X11 glyph) |
+
+```c
+// Switch to crosshair while a drawing tool is active
+ChangeCursor(34);
+
+// Restore default
+ChangeCursor(68);
+
+// Hide cursor for a fullscreen game
+ChangeCursor(255);
+```
+
+<Tip>
+The full list of X11 cursor font glyphs is defined in `<X11/cursorfont.h>`. Divide the `XC_*` constant values by 2 to get the raw glyph index used by `ChangeCursor`.
+</Tip>

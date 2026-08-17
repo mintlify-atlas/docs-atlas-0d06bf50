@@ -1,0 +1,170 @@
+---
+title: "Event Callback Functions — LWXGL API"
+sidebarTitle: "Event Callbacks"
+description: "Reference for EventAttachKey, EventAttachClick, EventAttachDelete, EventAttachMove, and EnableResizing in LWXGL."
+---
+
+LWXGL routes X11 events to user-supplied callbacks registered before `MainWindowLoop` is called. Each function below stores a single function pointer; calling the same registration function a second time overwrites the previous callback. All callbacks run on the main thread inside the event-processing step of the window loop.
+
+---
+
+## `EventAttachKey`
+
+```c
+void EventAttachKey(void (*Key)(int key));
+```
+
+Registers a callback that fires whenever a key press event is received from X11. The `key` argument passed to your callback is either a printable ASCII character code (32–126) or one of the `KEY_*` constants defined in `libLWXGL.h`. Backspace is delivered as `8`; Enter/Return is normalised from `13` to `10` before the callback is invoked.
+
+<ParamField path="Key" type="void (*)(int key)" required>
+  Callback invoked on each key press. `key` is an ASCII code (32–126), `8` (Backspace), `10` (Enter), or a `KEY_*` constant for arrow and function keys.
+</ParamField>
+
+<Note>
+  The callback is **not** called when a modal dialog is open, or when the cursor is hovering over an `Input` element at the time of the key press — those elements consume the event directly.
+</Note>
+
+Up to **8 simultaneous key presses** are tracked internally. If more than 8 keys are held at once, additional presses are silently ignored until a slot frees up on key release.
+
+---
+
+## `EventAttachClick`
+
+```c
+void EventAttachClick(void (*Click)(int x, int y, int btn));
+```
+
+Registers a callback for mouse **button release** events. The callback receives the window-relative cursor position at the time of the release and the button identifier.
+
+<ParamField path="Click" type="void (*)(int x, int y, int btn)" required>
+  Callback invoked on mouse button release.
+</ParamField>
+
+<ParamField path="x" type="int">
+  Horizontal cursor position in window coordinates at the time of the release.
+</ParamField>
+
+<ParamField path="y" type="int">
+  Vertical cursor position in window coordinates at the time of the release.
+</ParamField>
+
+<ParamField path="btn" type="int">
+  Button identifier:
+
+  | Value | Button |
+  |---|---|
+  | `1` | Left |
+  | `2` | Middle |
+  | `3` | Right |
+  | `4` | Scroll wheel up |
+  | `5` | Scroll wheel down |
+</ParamField>
+
+<Note>
+  The callback is **not** called when a modal is open, or when the release lands on a `Button`, `Checkbox`, or `Console` element — those elements consume the event and fire their own handlers.
+</Note>
+
+---
+
+## `EventAttachDelete`
+
+```c
+void EventAttachDelete(int (*on_exit)());
+```
+
+Registers a callback for the `WM_DELETE_WINDOW` client message, sent by the window manager when the user requests the window to close (e.g. clicking the × button). Return `1` to allow the close to proceed; return `0` to cancel it and keep the window open.
+
+<ParamField path="on_exit" type="int (*)()" required>
+  Callback invoked on window-close request. Return `1` to confirm close, `0` to cancel.
+</ParamField>
+
+<Warning>
+  If no callback is registered the window closes immediately when `WM_DELETE_WINDOW` is received. Register this callback if you need to prompt the user or flush state before exiting.
+</Warning>
+
+---
+
+## `EventAttachMove`
+
+```c
+void EventAttachMove(void (*Move)(int x, int y));
+```
+
+Registers a callback for pointer motion events. The callback is invoked every time the cursor moves within the window. When the pointer **leaves** the window entirely, the callback is called once with `x = -1, y = -1`.
+
+<ParamField path="Move" type="void (*)(int x, int y)" required>
+  Callback invoked on each pointer motion event. Receives `x = -1, y = -1` when the cursor exits the window.
+</ParamField>
+
+<Tip>
+  For one-shot or frame-rate-independent queries of the current mouse position, prefer `QueryMouse` inside your frame callback rather than accumulating state in `EventAttachMove`.
+</Tip>
+
+---
+
+## `EnableResizing`
+
+```c
+void EnableResizing(void (*Resize)(int w, int h));
+```
+
+Unlocks window resizing at the window-manager level and registers a callback that fires whenever the window dimensions change. This function must be called **after** `CreateWindow`. The callback receives the new client-area dimensions.
+
+<ParamField path="Resize" type="void (*)(int w, int h)" required>
+  Callback invoked after the window is resized. `w` and `h` are the new window width and height in pixels.
+</ParamField>
+
+<Note>
+  When scroll mode is enabled via `ReserveScroll`, the window's maximum resizable height is capped at the virtual canvas height set by `ReserveScroll`. This constraint is enforced through `XSetWMNormalHints`.
+</Note>
+
+---
+
+## Complete Example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+void on_key(int key) {
+    if (key == KEY_UP)        printf("Up arrow\n");
+    else if (key == KEY_DOWN) printf("Down arrow\n");
+    else if (key >= 32)       printf("Key: %c\n", (char)key);
+}
+
+void on_click(int x, int y, int btn) {
+    printf("Click at (%d, %d) button=%d\n", x, y, btn);
+}
+
+int on_delete() {
+    /* Return 0 to prevent close, 1 to allow it. */
+    printf("Close requested\n");
+    return 1;
+}
+
+void on_move(int x, int y) {
+    if (x == -1) printf("Cursor left window\n");
+    else         printf("Mouse at (%d, %d)\n", x, y);
+}
+
+void on_resize(int w, int h) {
+    printf("Window resized to %dx%d\n", w, h);
+}
+
+void frame(int tick, float dt) {
+    /* per-frame rendering */
+}
+
+int main() {
+    CreateWindow(800, 600, "Demo", CLR_BLACK);
+
+    EventAttachKey(on_key);
+    EventAttachClick(on_click);
+    EventAttachDelete(on_delete);
+    EventAttachMove(on_move);
+    EnableResizing(on_resize);   /* must come after CreateWindow */
+
+    MainWindowLoop(60, frame);
+    return 0;
+}
+```

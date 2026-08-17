@@ -1,0 +1,140 @@
+---
+title: "Console Element — LWXGL API"
+sidebarTitle: "Console"
+description: "Reference for CreateConsole, ConsolePrint, and ConsoleClear. Display a scrollable text console inside your LWXGL window."
+---
+
+The console element provides a scrollable, multi-line text display suitable for logs, debug output, or any stream of runtime messages. Text is appended with a `printf`-style interface and the view auto-scrolls to follow new output when it was already at the bottom. A scrollbar thumb is rendered on the right side, and hovering the console reveals position and scroll-percentage overlays in the top-right corner. The console stores its content as a single contiguous string and recomputes line wrapping each frame based on the configured column count.
+
+---
+
+## CreateConsole
+
+```c
+void CreateConsole(int id, int x, int y, int cols, int rows,
+                   int con_clr, int txt_clr);
+```
+
+Creates a scrollable text console element. The pixel dimensions are derived from `cols` and `rows`:
+
+- **Width** = `cols × 9 + 17` pixels
+- **Height** = `rows × 15 + 10` pixels
+
+The rightmost 13 pixels of the width are reserved for the scrollbar thumb.
+
+<ParamField path="id" type="int" required>
+  Unique element ID. Any existing element at this ID is deleted first.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge position in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge position in pixels.
+</ParamField>
+
+<ParamField path="cols" type="int" required>
+  Number of character columns. Text longer than this wraps to the next line.
+</ParamField>
+
+<ParamField path="rows" type="int" required>
+  Number of visible text rows displayed at once.
+</ParamField>
+
+<ParamField path="con_clr" type="int" required>
+  Packed color for the console box. Upper nibble = border color, lower nibble = background fill color.
+</ParamField>
+
+<ParamField path="txt_clr" type="int" required>
+  Packed color for text rendering. Upper nibble = text color, lower nibble = scrollbar thumb color.
+</ParamField>
+
+---
+
+## ConsolePrint
+
+```c
+void ConsolePrint(int id, const char* format, ...);
+```
+
+Appends formatted text to the console using `printf`-style format strings. Newline characters (`\n`) advance to the next line. Tab characters (`\t`) are expanded to 4 spaces at render time. Non-printable characters outside the range 27–126 (other than `\n` and `\t`) are displayed as `?`.
+
+If the scroll position was at or beyond the maximum scroll before the print, the view automatically advances to follow the new output.
+
+<ParamField path="id" type="int" required>
+  ID of an existing console element.
+</ParamField>
+
+<ParamField path="format" type="const char*" required>
+  `printf`-compatible format string.
+</ParamField>
+
+<ParamField path="..." type="variadic">
+  Format arguments corresponding to the format string.
+</ParamField>
+
+<Tip>
+  To print a blank line, call `ConsolePrint(id, "\n")`. To separate sections visually, print a line of dashes: `ConsolePrint(id, "---\n")`.
+</Tip>
+
+---
+
+## ConsoleClear
+
+```c
+void ConsoleClear(int id);
+```
+
+Erases all text from the console, resets the total line count to zero, and sets the scroll offset back to 0. The element remains alive and can receive new output from `ConsolePrint` immediately.
+
+<ParamField path="id" type="int" required>
+  ID of an existing console element.
+</ParamField>
+
+---
+
+## Interaction
+
+When the mouse cursor is inside the console bounds:
+
+- **Mouse wheel** — scrolls the view up or down.
+- **Spacebar** — jumps instantly to the bottom of the output.
+- **Top-right overlay** — two status lines appear, rendered using the scrollbar color as background and the text color as foreground:
+  - `Viewing: <first> - <last> / <total>` — line range currently visible.
+  - `Scroll: <n>%` — current scroll position as a percentage of maximum scroll.
+
+<Note>
+  The hover overlay is drawn using `XDrawImageString`, which fills the glyph background. The background color is taken from the lower nibble of `con_clr` and the foreground from the lower nibble of `txt_clr`.
+</Note>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <time.h>
+
+void setup(void) {
+    // 60-column, 20-row console at (10, 10).
+    // con_clr 0x80: CLR_GRAY border, CLR_BLACK fill.
+    // txt_clr 0xF7: CLR_WHITE text, CLR_LGRAY scrollbar.
+    CreateConsole(0, 10, 10, 60, 20, 0x80, 0xF7);
+
+    ConsolePrint(0, "LWXGL console ready.\n");
+    ConsolePrint(0, "Build date: %s %s\n", __DATE__, __TIME__);
+}
+
+void on_every(int tick, float dt) {
+    // Log something every 60 ticks (~1 s at 60 fps).
+    if (tick % 60 == 0) {
+        ConsolePrint(0, "[%6d] tick\tdt=%.4f s\n", tick, dt);
+    }
+}
+
+void on_clear_click(void) {
+    ConsoleClear(0);
+    ConsolePrint(0, "Console cleared.\n");
+}
+```

@@ -1,0 +1,162 @@
+---
+title: "Button and Input Elements — LWXGL API"
+sidebarTitle: "Buttons & Inputs"
+description: "Reference for CreateButton, CreateInput, and GetInput. Add clickable buttons with callbacks and text input fields to your LWXGL window."
+---
+
+Buttons and inputs are the primary interactive elements in LWXGL. Buttons fire a callback when left-clicked and render with three distinct packed colors for unpressed, hover, and pressed states. Input fields capture keyboard input when the mouse hovers over them, storing up to 127 characters in an internal buffer that you read back with `GetInput`. Colors for both element types use a packed nibble format: the upper nibble is the border/outline color index and the lower nibble is the fill color index.
+
+---
+
+## CreateButton
+
+```c
+void CreateButton(int id, int x, int y, int w, int h,
+                  int u, int hvr, int p,
+                  const char* label, void (*onclick)(void));
+```
+
+Creates a clickable button. The button is rendered as a filled rectangle using the lower nibble of the active color, with a rectangular outline drawn using the upper nibble, and the label text centered inside. The three packed color arguments control appearance for each interaction state.
+
+<ParamField path="id" type="int" required>
+  Unique element ID. Any existing element at this ID is deleted first.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge position in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge position in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels.
+</ParamField>
+
+<ParamField path="u" type="int" required>
+  Packed color for the **unpressed** state. Upper nibble = border color, lower nibble = fill color. Example: `0xF8` — white border, gray fill.
+</ParamField>
+
+<ParamField path="hvr" type="int" required>
+  Packed color for the **hover** state (cursor inside, button not held).
+</ParamField>
+
+<ParamField path="p" type="int" required>
+  Packed color for the **pressed** state (left mouse button held while inside).
+</ParamField>
+
+<ParamField path="label" type="const char*" required>
+  Button text, centered horizontally and vertically. The pointer is stored directly — **not copied**. The string must remain valid for the element's lifetime.
+</ParamField>
+
+<ParamField path="onclick" type="void (*)(void)" required>
+  Callback invoked on left-click release. Pass `NULL` for no action. Passing `DeleteWindow` is a common pattern for a Quit button.
+</ParamField>
+
+<Note>
+  The `label` pointer is not duplicated. Use a string literal or a `static` / heap-allocated buffer that outlives the element.
+</Note>
+
+---
+
+## CreateInput
+
+```c
+void CreateInput(int id, int x, int y, int w, int h,
+                 int u, int hvr, int max);
+```
+
+Creates a single-line text input field. The field captures keystrokes while the mouse cursor is inside its bounds. A blinking underscore cursor is appended to the displayed text while the field is active. Backspace removes the last character. The internal buffer is always 128 bytes, zero-initialized.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge position in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge position in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels. Pass `-1` to auto-size based on `max`: the computed width is `(max + 1) * 9 + 10` pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels.
+</ParamField>
+
+<ParamField path="u" type="int" required>
+  Packed color for the **inactive** state (cursor not inside). Upper nibble = border, lower nibble = fill.
+</ParamField>
+
+<ParamField path="hvr" type="int" required>
+  Packed color for the **hover/active** state. Pass `CLR_NONE` (`-1`) to use the same packed color as `u`.
+</ParamField>
+
+<ParamField path="max" type="int" required>
+  Maximum number of characters accepted. Values above 127 are clamped to 127.
+</ParamField>
+
+---
+
+## GetInput
+
+```c
+char* GetInput(int id);
+```
+
+Returns a pointer to the input element's internal 128-byte buffer. The buffer is null-terminated and contains exactly the characters entered by the user, up to `max` characters.
+
+<ParamField path="id" type="int" required>
+  ID of an existing input element.
+</ParamField>
+
+<Warning>
+  The returned pointer is owned by the element. Do **not** free it. The pointer becomes invalid after `DeleteElement(id)` is called. Copy the string if you need to retain it beyond the element's lifetime.
+</Warning>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+// Labels must outlive the button elements.
+static const char *lbl_submit = "Submit";
+static const char *lbl_quit   = "Quit";
+
+void on_submit(void) {
+    // Read directly from the input buffer.
+    char *name = GetInput(1);
+    char *email = GetInput(2);
+    printf("Name: %s  Email: %s\n", name, email);
+}
+
+void setup(void) {
+    // Name input: auto-width, max 32 chars.
+    // Packed 0x88: CLR_GRAY border + CLR_GRAY fill (inactive).
+    // Packed 0xFF: CLR_WHITE border + CLR_WHITE fill (active).
+    CreateInput(1, 20, 40, -1, 24, 0x88, 0xFF, 32);
+
+    // Email input: fixed 200px wide.
+    CreateInput(2, 20, 80, 200, 24, 0x88, 0xFF, 48);
+
+    // Submit button: 100x28, gray→light gray→dark on interaction.
+    CreateButton(3, 20, 120, 100, 28, 0x88, 0x7F, 0x08,
+                 lbl_submit, on_submit);
+
+    // Quit button: calls DeleteWindow directly.
+    CreateButton(4, 130, 120, 80, 28, 0x48, 0x4F, 0x40,
+                 lbl_quit, DeleteWindow);
+}
+```

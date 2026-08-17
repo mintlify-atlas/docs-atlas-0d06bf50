@@ -1,0 +1,183 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "LWXGL",
+  "projectDescription": "A lightweight C/C++ shared library for building X11 desktop GUI applications with UI elements, raster image canvases, drawing primitives, OpenGL integration, and event handling.",
+  "theme": "aspen",
+  "primaryColor": "#0303AD",
+  "lightColor": "#5757FF",
+  "darkColor": "#000000",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/window-lifecycle",
+              "concepts/elements",
+              "concepts/color-palette",
+              "concepts/events"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/drawing",
+              "guides/images-and-tga",
+              "guides/opengl-integration",
+              "guides/scrolling-and-resizing",
+              "guides/modals-and-tasks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Windowing",
+            "pages": [
+              "api/windowing/create-window",
+              "api/windowing/window-config",
+              "api/windowing/main-loop"
+            ]
+          },
+          {
+            "group": "UI Elements",
+            "pages": [
+              "api/elements/text-and-labels",
+              "api/elements/buttons-and-inputs",
+              "api/elements/rects-ellipses-checkboxes",
+              "api/elements/console",
+              "api/elements/element-management"
+            ]
+          },
+          {
+            "group": "Drawing & Images",
+            "pages": [
+              "api/drawing/immediates",
+              "api/drawing/raster-canvas",
+              "api/drawing/tga-xbm-images",
+              "api/drawing/opengl"
+            ]
+          },
+          {
+            "group": "Events & Input",
+            "pages": [
+              "api/events/event-callbacks",
+              "api/events/keyboard-mouse-query"
+            ]
+          },
+          {
+            "group": "Constants & Types",
+            "pages": [
+              "api/constants"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Minimal C API usable from C and C++ programs",
+    "Built-in UI elements: text, buttons, inputs, checkboxes, consoles, rects, ellipses",
+    "Raster image canvas with per-pixel drawing primitives (rect, circle, line, triangle, sprite)",
+    "Indexed-color (16-color) palette with runtime modification",
+    "TGA (indexed, RLE-compressed) and XBM image loading and rendering",
+    "In-window OpenGL rendering via GLX offscreen pixmaps",
+    "Frame-accurate main loop with delta time and target FPS",
+    "Event system: keyboard, mouse, click, resize, scroll, move callbacks",
+    "Modal dialogs (alert, confirm, input) and queued background tasks",
+    "Window scrolling with optional scrollbar, tooltip support, cursor customization"
+  ],
+  "publicApiSurface": [
+    "CreateWindow(int w, int h, const char* name, int bgcolor)",
+    "TerminateWindow()",
+    "MainWindowLoop(int target_fps, void (*on_every)(int, float))",
+    "DeleteWindow()",
+    "CreateText(int id, int x, int y, const char* text, int color)",
+    "CreateCopiedText(int id, int x, int y, const char* text, int color)",
+    "CreateButton(int id, int x, int y, int w, int h, int u, int hvr, int p, const char* label, void (*onclick)(void))",
+    "CreateInput(int id, int x, int y, int w, int h, int u, int hvr, int max)",
+    "GetInput(int id)",
+    "CreateRect(int id, int x, int y, int w, int h, int fg, int bg)",
+    "CreateEllipse(int id, int x, int y, int w, int h, int fg, int bg)",
+    "CreateCheckbox(int id, int x, int y, int size, int cb_col, const char* label)",
+    "GetCheckbox(int id)",
+    "CreateConsole(int id, int x, int y, int cols, int rows, int con_clr, int txt_clr)",
+    "ConsolePrint(int id, const char* format, ...)",
+    "ConsoleClear(int id)",
+    "CreateLabeledInput(int id1, int id2, int x, int y, const char* label, int clr1, int clr2, int max)",
+    "DeleteElement(int index)",
+    "ElemModifyBounds(int id, int x, int y, int w, int h)",
+    "ElemInside(int id)",
+    "ElemSetVisible(int id, int visible)",
+    "GetElement(int id)",
+    "SetTooltip(int id, const char* tooltip)",
+    "CreateImage(int id, int x, int y, int w, int h)",
+    "GetImageData(int id)",
+    "UpdateImage(int id)",
+    "ClearImage(int id, int c)",
+    "RedrawAllImages()",
+    "SetImageFont(int id, unsigned char* font, int h)",
+    "DrawString(int id, int x, int y, const char* txt, int color)",
+    "ApplyPixelFunc(int id, int (*f)(int, int, int))",
+    "PrimitiveRect(int id, int x, int y, int w, int h, int fg, int bg)",
+    "PrimitiveCircle(int id, int cx, int cy, int r, int fg, int bg)",
+    "PrimitiveLine(int id, int x1, int y1, int x2, int y2, int color)",
+    "PrimitiveTriangle(int id, int x1, int y1, int x2, int y2, int x3, int y3, int fg, int bg)",
+    "PrimitiveSprite(int id, int sx, int sy, int color, const char* sprite, int scale)",
+    "ImmediateText(int x, int y, const char* str, int color)",
+    "ImmediateTextF(int x, int y, int color, const char* fmt, ...)",
+    "ImmediateEllipse(int x, int y, int w, int h, int fg, int bg)",
+    "ImmediateRect(int x, int y, int w, int h, int fg, int bg)",
+    "ImmediateLine(int x1, int y1, int x2, int y2, int color)",
+    "AllocateTGA(const char* name, const char* path, int change_palette, int transparent)",
+    "AllocateMemoryTGA(const char* name, const char* buffer, int size, int change_palette, int transparent)",
+    "DeleteTGA(const char* name)",
+    "DrawIndexedTGA(int id, int x, int y, const char* name)",
+    "CreateTGAImage(int id, int x, int y, const char* path, int change_palette)",
+    "AllocateXBM(const char* name, const char* path, int colors, int transparent)",
+    "CreateXBMImage(int id, int x, int y, const char* path, int colors)",
+    "CaptureRegion(int x, int y, unsigned short w, unsigned short h)",
+    "CreateOpenGL(int id, int x, int y, int w, int h, int border)",
+    "SynchronizeOpenGL()",
+    "ChangeGLXContext(int id)",
+    "GLConvertTGA(const char* name)",
+    "GLObjectListify(const char* obj)",
+    "EventAttachKey(void (*Key)(int key))",
+    "EventAttachClick(void (*Click)(int x, int y, int btn))",
+    "EventAttachDelete(int (*on_exit)())",
+    "EventAttachMove(void (*Move)(int x, int y))",
+    "EnableResizing(void (*Resize)(int w, int h))",
+    "QueryMouse(int* x, int* y, int* btn)",
+    "QueryKeyboard()",
+    "QueryKeyboardRaw()",
+    "QueryKeyDown(int ch)",
+    "QueryKeysymDown(unsigned long keysym)",
+    "SpawnModal(int type, const char* msg, void (*on_confirm)(const char* input))",
+    "QueryModalOpen()",
+    "QueryScroll()",
+    "ReserveScroll(int height, int scrollbar_color, void (*Scroll)(int offset))",
+    "NewQueuedTask(int type, double run_after, void (*task)())",
+    "GetElapsedTime()",
+    "SetWindowTitle(const char* title)",
+    "SetWindowColor(int color)",
+    "ChangeCursor(int cursor_font_glyph)",
+    "SetGlobalBold(int bold)",
+    "SetRenderingOrder(int order)",
+    "PaletteQuery(int idx, unsigned char* r, unsigned char* g, unsigned char* b)",
+    "PaletteModify(int idx, unsigned char r, unsigned char g, unsigned char b, int redraw)",
+    "PaletteReset()",
+    "GetXConnection(XConnectionData* data)"
+  ]
+}

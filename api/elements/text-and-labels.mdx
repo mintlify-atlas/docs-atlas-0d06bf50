@@ -1,0 +1,143 @@
+---
+title: "Text and Label Elements — LWXGL API"
+sidebarTitle: "Text & Labels"
+description: "Reference for CreateText and CreateCopiedText in LWXGL. Display static text labels at fixed positions with a color index."
+---
+
+Text elements render a string at a fixed (x, y) position using one of the 16 palette color constants. Two variants are available depending on who owns the string's memory: `CreateText` stores the pointer directly for zero-copy rendering, while `CreateCopiedText` duplicates the string so the caller can free the original immediately after the call. `CreateLabeledInput` combines a copied-text label with an input field for quick form layout.
+
+---
+
+## CreateText
+
+```c
+void CreateText(int id, int x, int y, const char* text, int color);
+```
+
+Creates a text label element. The `text` pointer is stored as-is — no copy is made. The string must remain valid and unchanged for the entire lifetime of the element. Passing a pointer to a stack buffer that goes out of scope, or to memory that is later freed, produces undefined behavior.
+
+<ParamField path="id" type="int" required>
+  Unique element ID. If an element already exists at this ID it is deleted first.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Horizontal position in pixels, relative to the window origin.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Vertical position in pixels, relative to the window origin.
+</ParamField>
+
+<ParamField path="text" type="const char*" required>
+  Pointer to the null-terminated string to display. **Not copied** — the pointed-to memory must remain valid for the lifetime of the element.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  A `CLR_*` color constant (0–15) selecting the text foreground color from the current palette.
+</ParamField>
+
+<Warning>
+  Do not pass a pointer to a temporary buffer or a string that may be freed while the element is alive. Use `CreateCopiedText` instead if the string's lifetime is uncertain.
+</Warning>
+
+---
+
+## CreateCopiedText
+
+```c
+void CreateCopiedText(int id, int x, int y, const char* text, int color);
+```
+
+Identical to `CreateText` except that `text` is duplicated with `strdup` at creation time. The copy is owned by the element and freed automatically when `DeleteElement` is called. The original string may be freed or modified immediately after this call.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Horizontal position in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Vertical position in pixels.
+</ParamField>
+
+<ParamField path="text" type="const char*" required>
+  Null-terminated string to display. The string is copied internally; the caller retains ownership of the original.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  A `CLR_*` color constant for the text foreground.
+</ParamField>
+
+---
+
+## CreateLabeledInput
+
+```c
+void CreateLabeledInput(int id1, int id2, int x, int y,
+                        const char* label, int clr1, int clr2, int max);
+```
+
+Convenience wrapper that creates two elements in a single call: a `CopiedText` label at `(x, y)` and an `Input` field at `(x, y + 18)`. This 18-pixel offset produces a compact stacked layout suitable for forms.
+
+<ParamField path="id1" type="int" required>
+  Element ID for the text label.
+</ParamField>
+
+<ParamField path="id2" type="int" required>
+  Element ID for the input field.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Horizontal position for both elements.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Vertical position of the label. The input is placed at `y + 18`.
+</ParamField>
+
+<ParamField path="label" type="const char*" required>
+  Label text. Copied internally — the original may be freed after the call.
+</ParamField>
+
+<ParamField path="clr1" type="int" required>
+  Packed color for the input's inactive state. The upper nibble is also used as the label text color via `H(clr1)`.
+</ParamField>
+
+<ParamField path="clr2" type="int" required>
+  Packed color for the input's hover/active state.
+</ParamField>
+
+<ParamField path="max" type="int" required>
+  Maximum number of characters the input accepts (capped at 127). Input width is auto-sized: `(max + 1) * 9 + 10` pixels.
+</ParamField>
+
+<Tip>
+  `CreateLabeledInput` always auto-sizes the input width. If you need a specific width, create the `CopiedText` and `Input` elements separately.
+</Tip>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+
+// Static string — must outlive the element.
+static const char *status = "Ready";
+
+void setup(void) {
+    // Zero-copy: 'status' must remain valid until element 0 is deleted.
+    CreateText(0, 10, 10, status, CLR_WHITE);
+
+    // Copied: the local buffer is safe to reuse after this call.
+    char buf[64];
+    snprintf(buf, sizeof buf, "Build: %s", __DATE__);
+    CreateCopiedText(1, 10, 30, buf, CLR_LGRAY);
+
+    // Label + input pair: label at (10, 60), input at (10, 78).
+    // Packed color 0xF8: border = CLR_WHITE (0xF), fill = CLR_GRAY (0x8).
+    CreateLabeledInput(2, 3, 10, 60, "Username:", 0xF8, 0xFF, 24);
+}
+```

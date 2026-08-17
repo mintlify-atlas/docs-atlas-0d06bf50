@@ -1,0 +1,186 @@
+---
+title: "MainWindowLoop and Timing Functions — LWXGL"
+sidebarTitle: "Main Loop"
+description: "Reference for MainWindowLoop, GetElapsedTime, NewQueuedTask, and the per-frame callback signature in LWXGL."
+---
+
+`MainWindowLoop` is the heart of every LWXGL application. It blocks the calling thread, processes X11 events, drives rendering, and executes queued tasks on every frame tick until `DeleteWindow` is called. The companion functions below let you measure elapsed time, schedule deferred or repeating work, and spawn modal dialogs — all within that loop's lifetime.
+
+---
+
+## MainWindowLoop
+
+Blocks until `DeleteWindow` is called (or the WM close button is clicked). Each iteration checks whether a full frame period has elapsed; if so, it processes events, renders the frame, and drains the task queue before sleeping for whatever time remains in the frame budget.
+
+```c
+void MainWindowLoop(int target_fps, void (*on_every)(int frame, float dt));
+```
+
+<ParamField path="target_fps" type="int" required>
+  Desired frames per second. The frame period is computed as `1 000 000 / target_fps` microseconds.
+</ParamField>
+
+<ParamField path="on_every" type="void (*)(int frame, float dt)">
+  Called once per frame. `frame` is a monotonically incrementing tick counter starting at `0`. `dt` is the delta time in seconds since the previous frame as a `float`. Pass `NULL` if you only need element rendering.
+</ParamField>
+
+### Per-frame sequence
+
+1. **Event handling** — all pending X11 events (mouse, keyboard, resize, WM delete) are processed.
+2. **Rendering** — elements and the `on_every` callback are called in the order set by `SetRenderingOrder`. The result is blitted from the back-buffer `Pixmap` to the window.
+3. **Task queue** — every `NewQueuedTask` task whose target time has been reached is executed.
+4. **Sleep** — if more than 2 ms remain in the frame budget, the thread sleeps (`std::this_thread::sleep_for`); otherwise it yields (`std::this_thread::yield`).
+
+Frame timing uses `std::chrono::steady_clock` so it is unaffected by wall-clock adjustments.
+
+<Tip>
+  Press **F12** at runtime to toggle the debug overlay. It displays the current FPS, the per-frame work time in microseconds, and a 60-frame rolling bar graph of work times.
+</Tip>
+
+### Example
+
+```c
+#include "libLWXGL.h"
+
+void every_frame(int frame, float dt) {
+    /* dt is seconds since last frame; frame starts at 0 */
+    ImmediateText(10, 10, "running", CLR_WHITE);
+}
+
+int main(void) {
+    if (CreateWindow(800, 600, "Demo", CLR_BLACK) != 0) return 1;
+
+    MainWindowLoop(60, every_frame);
+    TerminateWindow();
+    return 0;
+}
+```
+
+---
+
+## GetElapsedTime
+
+Returns the total time in seconds that has elapsed since the very first frame of the current `MainWindowLoop` run. The value is updated once per frame before the `on_every` callback fires.
+
+```c
+double GetElapsedTime(void);
+```
+
+Returns a `double` in seconds. Always `0.0` before the first frame completes.
+
+```c
+void every_frame(int frame, float dt) {
+    double t = GetElapsedTime();
+    /* animate a value that oscillates every 2 seconds */
+    int x = (int)(400 + 200 * sin(t * 3.14159));
+    ImmediateEllipse(x, 300, 20, 20, CLR_YELLOW, CLR_NONE);
+}
+```
+
+---
+
+## NewQueuedTask
+
+Schedules a callback to run at the end of a future frame. Tasks are held in an internal queue and checked each frame after rendering. `TASK_RUN_AFTER` fires the callback exactly once; `TASK_RUN_EVERY` re-queues it automatically.
+
+```c
+void NewQueuedTask(int type, double run_after, void (*task)(void));
+```
+
+<ParamField path="type" type="int" required>
+  `TASK_RUN_AFTER` (0) — run `task` once after `run_after` seconds from the moment `NewQueuedTask` is called. `TASK_RUN_EVERY` (1) — run `task` repeatedly every `run_after` seconds, with the first invocation aligned to the next multiple of `run_after` relative to `GetElapsedTime`.
+</ParamField>
+
+<ParamField path="run_after" type="double" required>
+  Seconds until the first execution (`TASK_RUN_AFTER`) or the period between executions (`TASK_RUN_EVERY`).
+</ParamField>
+
+<ParamField path="task" type="void (*)(void)" required>
+  Zero-argument callback to invoke when the task fires.
+</ParamField>
+
+<Note>
+  Tasks are dequeued into a local vector before execution each frame, so it is safe to call `NewQueuedTask` from inside a task callback — the new task will be picked up on the following frame.
+</Note>
+
+```c
+void show_banner(void) {
+    /* called once, 3 seconds after the loop starts */
+    CreateText(99, 10, 10, "Welcome!", CLR_WHITE);
+}
+
+void tick(void) {
+    /* called every 1 second */
+    static int n = 0;
+    n++;
+}
+
+void every_frame(int frame, float dt) {
+    if (frame == 0) {
+        NewQueuedTask(TASK_RUN_AFTER, 3.0, show_banner);
+        NewQueuedTask(TASK_RUN_EVERY, 1.0, tick);
+    }
+}
+```
+
+---
+
+## SpawnModal
+
+Presents a blocking modal dialog over the current window. The modal captures all click and keyboard input until it is dismissed. Only one modal can be active at a time.
+
+```c
+void SpawnModal(int type, const char* msg, void (*on_confirm)(const char* input));
+```
+
+<ParamField path="type" type="int" required>
+  `MODAL_ALERT` (0) — message with an **OK** button; `on_confirm` is called with `NULL`. `MODAL_CONFIRM` (1) — message with **OK** and **Cancel** buttons; `on_confirm` is called with `NULL` on **OK**, not called on **Cancel**. `MODAL_INPUT` (2) — message with a text field and **OK** / **Cancel** buttons; `on_confirm` receives the entered string on **OK**. Input is capped at 150 characters.
+</ParamField>
+
+<ParamField path="msg" type="const char*" required>
+  Message text displayed in the dialog body. The string is duplicated internally via `strdup`, so it does not need to outlive the call.
+</ParamField>
+
+<ParamField path="on_confirm" type="void (*)(const char* input)" required>
+  Callback invoked when the user confirms the dialog. The `input` argument is `NULL` for `MODAL_ALERT` and `MODAL_CONFIRM`, and a pointer to the entered text for `MODAL_INPUT`. Do not free `input`.
+</ParamField>
+
+<Warning>
+  Calling `SpawnModal` while a modal is already active replaces the existing modal state including its pending `on_confirm` callback. Check `QueryModalOpen` first if you want to avoid this.
+</Warning>
+
+```c
+void on_name_entered(const char* input) {
+    if (input != NULL) {
+        SetWindowTitle(input);
+    }
+}
+
+void ask_for_name(void) {
+    SpawnModal(MODAL_INPUT, "Enter a window title:", on_name_entered);
+}
+
+void confirm_quit(void) {
+    SpawnModal(MODAL_CONFIRM, "Really quit?", NULL);
+    /* on_confirm is NULL here — use EventAttachDelete to intercept */
+}
+```
+
+---
+
+## QueryModalOpen
+
+Returns whether a modal dialog is currently displayed. Use this to suppress other interactions (e.g. button clicks) while the modal is active.
+
+```c
+int QueryModalOpen(void);
+```
+
+Returns `1` if a modal is active, `0` otherwise.
+
+```c
+void on_button_click(void) {
+    if (QueryModalOpen()) return;   /* ignore clicks behind the modal */
+    SpawnModal(MODAL_ALERT, "Hello!", NULL);
+}
+```

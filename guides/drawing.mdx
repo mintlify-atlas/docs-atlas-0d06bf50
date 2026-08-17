@@ -1,0 +1,268 @@
+---
+title: "Drawing Shapes and Text in LWXGL"
+sidebarTitle: "Drawing"
+description: "Use LWXGL immediate-mode functions and raster canvas primitives to draw text, rectangles, circles, lines, triangles, and sprites each frame."
+---
+
+LWXGL provides two complementary drawing models. **Immediate-mode** functions write directly to the back-buffer on every frame — they are fast but non-persistent; you must call them inside your `on_every` callback each tick. **Raster canvas** primitives operate on a named `Image` element whose pixel array persists between frames; you update the canvas explicitly and call `UpdateImage` to flush it to the screen.
+
+## Immediate-mode drawing
+
+All immediate-mode calls draw into the current frame's back-buffer. They do nothing outside the render callback.
+
+### ImmediateText
+
+```c
+void ImmediateText(int x, int y, const char* str, int color);
+```
+
+Renders a UTF-8 string at `(x, y)`. Newlines (`\n`) are supported — the renderer splits on them automatically, advancing 15px per line. Note that `y` is treated as the top of the text area; 11px is added internally before the first `XDrawString` call to position the baseline correctly.
+
+### ImmediateTextF
+
+```c
+void ImmediateTextF(int x, int y, int color, const char* fmt, ...);
+```
+
+printf-style wrapper around `ImmediateText`. The format string and variadic arguments follow the same rules as `snprintf`. The resulting string is stack-allocated internally, so there is no heap allocation.
+
+### ImmediateRect
+
+```c
+void ImmediateRect(int x, int y, int w, int h, int fg, int bg);
+```
+
+Draws a rectangle. `bg` is the fill color (drawn first with `XFillRectangle`); `fg` is the border color (drawn with `XDrawRectangle`, which insets one pixel). Pass `CLR_NONE` (`-1`) for either to skip that layer.
+
+### ImmediateEllipse
+
+```c
+void ImmediateEllipse(int x, int y, int w, int h, int fg, int bg);
+```
+
+Draws an ellipse or circle bounded by the rectangle `(x, y, w, h)`. `bg` fills the interior; `fg` draws the outline arc. Either can be `CLR_NONE`.
+
+### ImmediateLine
+
+```c
+void ImmediateLine(int x1, int y1, int x2, int y2, int color);
+```
+
+Draws a straight line from `(x1, y1)` to `(x2, y2)` in the given palette color.
+
+<Note>
+Immediate-mode functions are stateless — each call sets the GC foreground color before drawing. Order of calls within a single frame determines draw order.
+</Note>
+
+---
+
+## Raster canvas
+
+An `Image` element owns a flat `unsigned char` array where each byte is a color index in the range `0`–`15`, matching LWXGL's 16-color palette. Modifying the array has no visible effect until you call `UpdateImage`, which diffs against the previous frame and calls `XPutImage` only for changed pixels.
+
+### Workflow
+
+<Steps>
+  <Step title="Create the Image element">
+    ```c
+    CreateImage(10, 0, 0, 320, 240);
+    ```
+    Allocates the pixel array, the previous-frame shadow buffer, and an `XImage` internally. Width and height of `0` or negative values are treated as offsets from the window edge.
+  </Step>
+  <Step title="Get a pointer to the pixel array">
+    ```c
+    unsigned char *px = GetImageData(10);
+    ```
+    The returned pointer is `width * height` bytes. Index pixels as `px[y * width + x]`.
+  </Step>
+  <Step title="Modify pixels or call primitives">
+    Write color indices (0–15) directly, or use the `Primitive*` functions which write into the same array.
+  </Step>
+  <Step title="Flush to the screen">
+    ```c
+    UpdateImage(10);
+    ```
+    Scans for changed pixels, updates the backing `XImage`, and puts it to the element's `Pixmap`. Only changed pixels are re-written, so this call is cheap when the canvas is mostly static.
+  </Step>
+</Steps>
+
+### Gradient example
+
+```c
+// id=5, top-left (0,0), 256x64 pixels
+CreateImage(5, 0, 0, 256, 64);
+unsigned char *px = GetImageData(5);
+
+for (int y = 0; y < 64; y++) {
+    for (int x = 0; x < 256; x++) {
+        // color index cycles 0–15 across x
+        px[y * 256 + x] = (unsigned char)((x / 16) % 16);
+    }
+}
+
+UpdateImage(5);
+```
+
+---
+
+## Canvas primitives
+
+All `Primitive*` functions accept an element `id` and write into that element's pixel array. They do **not** call `UpdateImage` — flush yourself after all primitives are applied.
+
+### PrimitiveRect
+
+```c
+void PrimitiveRect(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+Draws a filled, bordered rectangle on the canvas. `fg` colors the border pixels (leftmost column, rightmost column, top row, bottom row). `bg` fills the interior. If `fg` is `CLR_NONE`, the border is also drawn in `bg`. Pixels outside the image bounds are clipped silently.
+
+### PrimitiveCircle
+
+```c
+void PrimitiveCircle(int id, int cx, int cy, int r, int fg, int bg);
+```
+
+Fills a circle centered at `(cx, cy)` with radius `r`. `bg` fills all pixels where `dx²+dy² ≤ r²`; `fg` draws the border ring where `|dx²+dy² − r²| < r`. Either can be `CLR_NONE` to skip that layer.
+
+### PrimitiveLine
+
+```c
+void PrimitiveLine(int id, int x1, int y1, int x2, int y2, int color);
+```
+
+Draws a line from `(x1, y1)` to `(x2, y2)` using incremental float stepping (not Bresenham integer arithmetic — `x_inc` and `y_inc` are floating-point, pixels are rounded to nearest integer).
+
+### PrimitiveTriangle
+
+```c
+void PrimitiveTriangle(int id,
+                       int x1, int y1,
+                       int x2, int y2,
+                       int x3, int y3,
+                       int fg, int bg);
+```
+
+Rasterizes a triangle using the edge-function test. `bg` fills pixels inside all three edges. `fg` draws the three border edges via `PrimitiveLine`. Either can be `CLR_NONE`.
+
+### PrimitiveSprite
+
+```c
+void PrimitiveSprite(int id, int sx, int sy, int color,
+                     const char* sprite, int scale);
+```
+
+Draws an RLE-encoded sprite at `(sx, sy)`. Each drawn pixel is `scale × scale` screen pixels. See the **Sprite format** section below for the string encoding.
+
+---
+
+## Sprite format
+
+Sprites are encoded as ASCII strings with the following tokens:
+
+| Token | Meaning |
+|---|---|
+| `#` | Filled pixel (drawn in `color`) |
+| `.` | Black pixel (`CLR_BLACK`, index 0) |
+| `$` | Newline — reset x to `sx`, advance y by `scale` |
+| `>` | Skip one pixel (transparent — no write) |
+| `0`–`9` (prefix) | Repeat the next token that many times |
+| `[...]` | Group — repeat the bracketed sub-expression a digit-prefix number of times |
+
+Digits accumulate for multi-digit counts (e.g. `12#` = 12 filled pixels).
+
+### Examples
+
+```c
+// Two rows of 8 filled pixels (8x2 solid block)
+PrimitiveSprite(id, 0, 0, CLR_WHITE, "8#$8#", 1);
+
+// 4×4 checkerboard scaled 2×
+PrimitiveSprite(id, 10, 10, CLR_RED, "4[#.]$4[.#]$4[#.]$4[.#]", 2);
+
+// 3×3 sprite with transparent center
+PrimitiveSprite(id, 20, 20, CLR_GREEN, "3#$#>#$3#", 1);
+```
+
+<Tip>
+Use `>` to leave pixels untouched (transparent). Use `.` when you explicitly want to paint a black pixel over whatever was there before.
+</Tip>
+
+---
+
+## Custom pixel function
+
+```c
+void ApplyPixelFunc(int id, int (*f)(int x, int y, int color));
+```
+
+Iterates every pixel in the image and replaces its color with `f(x, y, current_color) % 16`. Useful for color remapping, palettization effects, or applying masks.
+
+```c
+// Invert all colors (15 - index)
+int invert(int x, int y, int c) { return 15 - c; }
+ApplyPixelFunc(5, invert);
+UpdateImage(5);
+```
+
+---
+
+## Text on canvas
+
+LWXGL supports rendering a bitmap font into an `Image` element. The font is a flat 256-character × `h`-rows bitmap where each row is one byte (8 bits per character, 1 bit per pixel column).
+
+```c
+void SetImageFont(int id, unsigned char* font, int h);
+void DrawString(int id, int x, int y, const char* txt, int color);
+```
+
+`SetImageFont` installs the font into the element. `DrawString` renders `txt` at `(x, y)` using the installed font, advancing 9px per character. Newlines (`\n`) advance y by the font height. Pixels outside image bounds are clipped.
+
+```c
+extern unsigned char my_8x12_font[256 * 12];
+
+SetImageFont(5, my_8x12_font, 12);
+DrawString(5, 4, 4, "Hello, LWXGL!", CLR_WHITE);
+UpdateImage(5);
+```
+
+---
+
+## ClearImage
+
+```c
+void ClearImage(int id, int c);
+```
+
+Fills the entire pixel array with color index `c` using `memset`. This is the fastest way to reset a canvas before redrawing. Pass `CLR_BLACK` (0) to black out the canvas.
+
+---
+
+## Combined example
+
+```c
+// Create a 400×300 canvas at (10, 10)
+CreateImage(1, 10, 10, 400, 300);
+
+// Fill background
+ClearImage(1, CLR_GRAY);
+
+// Draw a filled cyan circle with a white border
+PrimitiveCircle(1, 200, 150, 60, CLR_WHITE, CLR_CYAN);
+
+// Draw a red diagonal line
+PrimitiveLine(1, 0, 0, 399, 299, CLR_RED);
+
+// Draw a yellow triangle
+PrimitiveTriangle(1, 200, 30, 50, 270, 350, 270, CLR_YELLOW, CLR_ORANGE);
+
+// Stamp a sprite at (10, 10)
+PrimitiveSprite(1, 10, 10, CLR_WHITE, "5#$#3>##$5#", 2);
+
+// Flush everything
+UpdateImage(1);
+
+// --- In on_every callback (immediate-mode overlay) ---
+ImmediateRect(0, 0, 420, 320, CLR_WHITE, CLR_NONE);
+ImmediateTextF(15, 5, CLR_BLACK, "Frame %d", tick);
+```

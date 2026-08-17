@@ -1,0 +1,261 @@
+---
+title: "Embedding OpenGL in an LWXGL Window"
+sidebarTitle: "OpenGL"
+description: "Render OpenGL content inside an LWXGL window using GLX offscreen pixmaps. Create OpenGL elements, switch contexts, and use GLObjectListify for 3D."
+---
+
+LWXGL embeds OpenGL by allocating a GLX offscreen pixmap for each OpenGL element. The pixmap gets its own `GLXContext`, so you can render 3D content at any position inside the window alongside regular buttons, text, and image elements. After rendering, LWXGL composites the pixmap into the back-buffer during the normal frame blit.
+
+---
+
+## Requirements
+
+<Warning>
+`CreateOpenGL` checks the display depth at runtime. The display must be running at **24 or 32 bits per pixel**. On shallower displays the function returns `0` and no element is created.
+</Warning>
+
+The host system must have a GLX-capable display server with a framebuffer configuration that supports `GLX_PIXMAP_BIT`, RGBA rendering, and a 24-bit depth buffer. Most modern X11 compositing desktops satisfy this.
+
+---
+
+## CreateOpenGL
+
+```c
+int CreateOpenGL(int id, int x, int y, int w, int h, int border);
+```
+
+Creates an OpenGL element at position `(x, y)` with inner dimensions `w × h`.
+
+| Parameter | Description |
+|---|---|
+| `id` | Element slot index. |
+| `x`, `y` | Top-left position in window (or virtual canvas) coordinates. |
+| `w`, `h` | Rendering area dimensions in pixels. |
+| `border` | `>= 0` — draw a border in this palette color and add 2px padding (element footprint becomes `(w+2) × (h+2)`). `< 0` — no border, no padding. |
+
+Returns `1` on success, `0` on failure (depth mismatch or no suitable `GLXFBConfig`).
+
+```c
+// 400×300 OpenGL viewport at (20, 20), white border
+if (!CreateOpenGL(10, 20, 20, 400, 300, CLR_WHITE)) {
+    fprintf(stderr, "OpenGL element creation failed\n");
+    return 1;
+}
+```
+
+---
+
+## Context switching
+
+Each OpenGL element owns an independent `GLXContext` bound to its offscreen pixmap. You must make it current before issuing any OpenGL commands and release it afterward so the compositor can read the pixmap safely.
+
+```c
+void ChangeGLXContext(int id);
+```
+
+- `ChangeGLXContext(id)` — binds the element's GLX context as current.
+- `ChangeGLXContext(-1)` — releases the current context (calls `glXMakeContextCurrent` with `None`).
+
+<Warning>
+Always call `ChangeGLXContext(-1)` after finishing your OpenGL work. Leaving a context current while LWXGL renders other elements can corrupt the display.
+</Warning>
+
+---
+
+## SynchronizeOpenGL
+
+```c
+void SynchronizeOpenGL();
+```
+
+Calls `glFlush()` followed by `glXWaitGL()`. This ensures all queued OpenGL commands are executed and the pixmap is fully written before LWXGL copies it to the window back-buffer. Always call this before `ChangeGLXContext(-1)`.
+
+---
+
+## Typical render loop
+
+<Steps>
+  <Step title="Create the element at startup">
+    ```c
+    CreateOpenGL(10, 20, 20, 400, 300, CLR_WHITE);
+    ```
+  </Step>
+  <Step title="Switch to the element's GLX context">
+    ```c
+    ChangeGLXContext(10);
+    ```
+    Call this at the start of your per-frame OpenGL work inside `on_every`.
+  </Step>
+  <Step title="Render with standard OpenGL">
+    ```c
+    glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // ... draw calls ...
+    ```
+  </Step>
+  <Step title="Flush and synchronize">
+    ```c
+    SynchronizeOpenGL();
+    ```
+  </Step>
+  <Step title="Release the context">
+    ```c
+    ChangeGLXContext(-1);
+    ```
+    LWXGL will now composite the completed pixmap into the window frame.
+  </Step>
+</Steps>
+
+---
+
+## GLObjectListify
+
+```c
+GLuint GLObjectListify(const char* obj);
+```
+
+Parses a simple text-format 3D object description and compiles it into an OpenGL display list. Returns the `GLuint` list ID on success, or `0` on any parse error. Call `glCallList(list_id)` to render it.
+
+### Object format
+
+The string consists of two sections separated by whitespace:
+
+**Vertex section:**
+```
+COUNT <n>
+V <x> <y> <z>
+V <x> <y> <z>
+...  (n lines)
+```
+
+**Face section:**
+```
+COUNT <m>
+QUAD <r> <g> <b>  <v0> <v1> <v2> <v3>
+TRI  <r> <g> <b>  <v0> <v1> <v2>
+...  (m lines)
+```
+
+- `r g b` are 0–255 per-face color values (passed to `glColor4ub`).
+- `v0`–`v3` are zero-based indices into the vertex array.
+- `QUAD` generates a `GL_QUADS` primitive; `TRI` generates `GL_TRIANGLES`.
+- Vertex indices out of range cause the function to return `0`.
+
+### Minimal example
+
+```c
+const char *pyramid =
+    "COUNT 4\n"
+    "V  0.0  1.0  0.0\n"   // apex
+    "V -1.0 -1.0  1.0\n"
+    "V  1.0 -1.0  1.0\n"
+    "V  0.0 -1.0 -1.0\n"
+    "COUNT 3\n"
+    "TRI 255   0   0  0 1 2\n"   // red front face
+    "TRI   0 255   0  0 2 3\n"   // green right face
+    "TRI   0   0 255  0 3 1\n";  // blue left face
+
+ChangeGLXContext(10);
+GLuint pyramid_list = GLObjectListify(pyramid);
+ChangeGLXContext(-1);
+```
+
+<Note>
+`GLObjectListify` must be called with an active GLX context — switch to the target element's context before calling it.
+</Note>
+
+---
+
+## GLConvertTGA
+
+Convert an allocated TGA to an OpenGL `GL_TEXTURE_2D` texture with `GLConvertTGA(name)`. See the [Images & TGA guide](/guides/images-and-tga#glconverttga) for full details.
+
+---
+
+## GetXConnection
+
+```c
+void GetXConnection(XConnectionData* data);
+```
+
+Fills an `XConnectionData` struct with the raw X11 and GLX handles used internally by LWXGL:
+
+```c
+typedef struct {
+    Pixmap        bb;       // back-buffer pixmap
+    XFontStruct*  font;     // current X11 font
+    Display*      dpy;      // X display connection
+    Window        win;      // main window
+    GC            gc;       // graphics context
+    unsigned long clrs[16]; // resolved palette pixel values
+    int           scrn;     // screen number
+    Visual*       vis;      // visual info
+    int           depth;    // display depth
+    Colormap      cmap;     // colormap
+} XConnectionData;
+```
+
+Use this for advanced integrations that need to talk directly to X11 or GLX outside of LWXGL's API.
+
+```c
+XConnectionData xdata;
+GetXConnection(&xdata);
+
+// Example: create an additional GLX context sharing resources
+GLXContext shared_ctx = glXCreateNewContext(
+    xdata.dpy, fbconfig, GLX_RGBA_TYPE, NULL, True);
+```
+
+---
+
+## Spinning triangle example
+
+```c
+#include "libLWXGL.h"
+#include <GL/gl.h>
+#include <math.h>
+
+static int gl_id = 5;
+static float angle = 0.0f;
+
+void on_frame(int tick, float dt) {
+    angle += 90.0f * dt;  // 90 degrees per second
+
+    ChangeGLXContext(gl_id);
+
+    glViewport(0, 0, 320, 240);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-1, 1, -1, 1, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glRotatef(angle, 0.0f, 0.0f, 1.0f);
+
+    glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glBegin(GL_TRIANGLES);
+        glColor3f(1.0f, 0.0f, 0.0f); glVertex2f( 0.0f,  0.8f);
+        glColor3f(0.0f, 1.0f, 0.0f); glVertex2f(-0.7f, -0.5f);
+        glColor3f(0.0f, 0.0f, 1.0f); glVertex2f( 0.7f, -0.5f);
+    glEnd();
+
+    SynchronizeOpenGL();
+    ChangeGLXContext(-1);
+
+    ImmediateTextF(10, 5, CLR_WHITE, "angle: %.1f", angle);
+}
+
+int main(void) {
+    CreateWindow(640, 480, "OpenGL Demo", CLR_BLACK);
+
+    if (!CreateOpenGL(gl_id, 160, 120, 320, 240, CLR_GRAY)) {
+        fprintf(stderr, "OpenGL init failed\n");
+        return 1;
+    }
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```

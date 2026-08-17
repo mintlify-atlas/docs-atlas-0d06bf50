@@ -1,72 +1,102 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "LWXGL",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
-  },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "primary": "#0303AD",
+    "light": "#5757FF",
+    "dark": "#000000"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/DREsSedAlarm184/LWXGL"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/DREsSedAlarm184/LWXGL"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/window-lifecycle",
+              "concepts/elements",
+              "concepts/color-palette",
+              "concepts/events"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/drawing",
+              "guides/images-and-tga",
+              "guides/opengl-integration",
+              "guides/scrolling-and-resizing",
+              "guides/modals-and-tasks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Windowing",
+            "pages": [
+              "api/windowing/create-window",
+              "api/windowing/window-config",
+              "api/windowing/main-loop"
+            ]
+          },
+          {
+            "group": "UI Elements",
+            "pages": [
+              "api/elements/text-and-labels",
+              "api/elements/buttons-and-inputs",
+              "api/elements/rects-ellipses-checkboxes",
+              "api/elements/console",
+              "api/elements/element-management"
+            ]
+          },
+          {
+            "group": "Drawing & Images",
+            "pages": [
+              "api/drawing/immediates",
+              "api/drawing/raster-canvas",
+              "api/drawing/tga-xbm-images",
+              "api/drawing/opengl"
+            ]
+          },
+          {
+            "group": "Events & Input",
+            "pages": [
+              "api/events/event-callbacks",
+              "api/events/keyboard-mouse-query"
+            ]
+          },
+          {
+            "group": "Constants & Types",
+            "pages": [
+              "api/constants"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

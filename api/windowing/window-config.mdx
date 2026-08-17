@@ -1,0 +1,258 @@
+---
+title: "Window Configuration Functions — LWXGL"
+sidebarTitle: "Window Config"
+description: "Reference for LWXGL window configuration: SetWindowTitle, SetWindowColor, ChangeCursor, SetGlobalBold, PaletteModify, PaletteQuery, PaletteReset, GetXConnection."
+---
+
+These functions configure properties of the window and the rendering environment after `CreateWindow` returns. Palette functions let you swap colors at runtime; `GetXConnection` hands you the raw X11 handles for advanced or GLX usage; `ReserveScroll` and `EnableResizing` extend the window's layout capabilities and must be configured before or shortly after `CreateWindow`.
+
+---
+
+## SetWindowTitle
+
+Changes the text displayed in the window title bar. Takes effect immediately via `XStoreName`.
+
+```c
+void SetWindowTitle(const char* title);
+```
+
+<ParamField path="title" type="const char*" required>
+  Null-terminated string to display in the title bar.
+</ParamField>
+
+---
+
+## SetWindowColor
+
+Changes the background clear color used at the start of each frame. Equivalent to passing a different `bgcolor` to `CreateWindow`, but callable at any time during the loop.
+
+```c
+void SetWindowColor(int color);
+```
+
+<ParamField path="color" type="int" required>
+  `CLR_*` constant for the new background color. Pass `CLR_NONE` (-1) to disable clearing.
+</ParamField>
+
+---
+
+## ChangeCursor
+
+Replaces the window cursor using an X11 cursor-font glyph index. The change takes effect on the next mouse event processed by the X server.
+
+```c
+void ChangeCursor(int cursor_font_glyph);
+```
+
+<ParamField path="cursor_font_glyph" type="int" required>
+  Glyph index from the X11 cursor font. Pass `255` to hide the cursor entirely. The default cursor set by `CreateWindow` is glyph `68` (left pointer).
+</ParamField>
+
+```c
+ChangeCursor(255);   /* hide cursor over a full-screen canvas */
+ChangeCursor(68);    /* restore default left pointer          */
+ChangeCursor(150);   /* crosshair                             */
+```
+
+---
+
+## SetGlobalBold
+
+Switches the global bitmap font between `9x15` (default) and `9x15bold`. Affects all subsequent text rendering. Returns `1` on success or `0` if the requested font is not available on the X server.
+
+```c
+int SetGlobalBold(int bold);
+```
+
+<ParamField path="bold" type="int" required>
+  `1` to load `9x15bold`; `0` to revert to `9x15`.
+</ParamField>
+
+```c
+if (!SetGlobalBold(1)) {
+    /* 9x15bold not installed; continue with 9x15 */
+}
+```
+
+---
+
+## ReserveScroll
+
+Enables a scrollable virtual canvas. Must be called **before** `CreateWindow`. The canvas height set here becomes the `h` argument that `CreateWindow` passes to the back-buffer allocator; the `h` you pass to `CreateWindow` becomes the visible viewport height.
+
+```c
+void ReserveScroll(int height, int scrollbar_color, void (*Scroll)(int offset));
+```
+
+<ParamField path="height" type="int" required>
+  Total virtual canvas height in pixels. Must be greater than the viewport height passed to `CreateWindow`.
+</ParamField>
+
+<ParamField path="scrollbar_color" type="int" required>
+  Packed color int for the scrollbar. The upper nibble is the thumb color index; the lower nibble is the track color index (both `CLR_*` values packed as `(thumb << 4) | track`). Pass `-1` to hide the scrollbar while still enabling scrolling.
+</ParamField>
+
+<ParamField path="Scroll" type="void (*)(int offset)">
+  Callback invoked whenever the scroll position changes. `offset` is the new scroll position in pixels from the top of the canvas.
+</ParamField>
+
+```c
+void on_scroll(int offset) {
+    /* offset is the new top-of-viewport pixel row */
+}
+
+ReserveScroll(2000, (CLR_GRAY << 4) | CLR_LGRAY, on_scroll);
+CreateWindow(800, 600, "Scrollable", CLR_BLACK);
+```
+
+---
+
+## QueryScroll
+
+Returns the current scroll offset — the number of pixels from the top of the virtual canvas to the top of the visible viewport.
+
+```c
+int QueryScroll(void);
+```
+
+Returns an `int` offset in pixels. Always `0` if `ReserveScroll` was not called.
+
+---
+
+## EnableResizing
+
+Enables window resizing after `CreateWindow`. Without this call, `XSetWMNormalHints` constrains the window to its initial size. The `Resize` callback is invoked each time the window is resized.
+
+```c
+void EnableResizing(void (*Resize)(int w, int h));
+```
+
+<ParamField path="Resize" type="void (*)(int w, int h)" required>
+  Callback receiving the new width and height in pixels after every resize event.
+</ParamField>
+
+---
+
+## SetRenderingOrder
+
+Controls whether the per-frame `on_every` callback (passed to `MainWindowLoop`) runs before or after the element list is rendered each frame.
+
+```c
+void SetRenderingOrder(int order);
+```
+
+<ParamField path="order" type="int" required>
+  `ORDER_ELEM_FIRST` (1) — elements render first, then `on_every`. `ORDER_ELEM_SECOND` (0, default) — `on_every` runs first, then elements render on top.
+</ParamField>
+
+---
+
+## GetXConnection
+
+Fills an `XConnectionData` struct with every raw X11 and GLX handle owned by LWXGL. Use this to call Xlib or GLX APIs directly without duplicating the connection setup.
+
+```c
+void GetXConnection(XConnectionData* data);
+```
+
+<ParamField path="data" type="XConnectionData*" required>
+  Pointer to a caller-allocated `XConnectionData` struct. All fields are written by this call.
+</ParamField>
+
+### XConnectionData fields
+
+```c
+typedef struct {
+    Window        win;       /* the application window                  */
+    Display*      dpy;       /* X display connection                    */
+    Pixmap        bb;        /* back-buffer Pixmap rendered each frame  */
+    XFontStruct*  font;      /* current 9x15 or 9x15bold font           */
+    GC            gc;        /* shared graphics context                 */
+    int           scrn;      /* default screen index                    */
+    Visual*       vis;       /* default visual                          */
+    int           depth;     /* default depth                           */
+    Colormap      cmap;      /* default colormap                        */
+    unsigned long clrs[16];  /* allocated pixel values for CLR_* indices */
+} XConnectionData;
+```
+
+```c
+XConnectionData xc;
+GetXConnection(&xc);
+
+/* Draw directly onto the back-buffer with raw Xlib */
+XDrawLine(xc.dpy, xc.bb, xc.gc, 0, 0, 100, 100);
+```
+
+---
+
+## PaletteQuery
+
+Reads back the current RGB values of a palette entry. The values are rounded through X11's `XQueryColor` which uses 16-bit channel precision internally; the result is scaled back to 8-bit.
+
+```c
+void PaletteQuery(int idx, unsigned char* r, unsigned char* g, unsigned char* b);
+```
+
+<ParamField path="idx" type="int" required>
+  Palette index, 0–15.
+</ParamField>
+
+<ParamField path="r" type="unsigned char*" required>
+  Output pointer for the red channel (0–255).
+</ParamField>
+
+<ParamField path="g" type="unsigned char*" required>
+  Output pointer for the green channel (0–255).
+</ParamField>
+
+<ParamField path="b" type="unsigned char*" required>
+  Output pointer for the blue channel (0–255).
+</ParamField>
+
+---
+
+## PaletteModify
+
+Replaces palette entry `idx` with new RGB values. The old color is freed from the colormap and a new one is allocated. If `redraw` is `1`, all images that reference palette entries are repainted immediately.
+
+```c
+void PaletteModify(int idx, unsigned char r, unsigned char g, unsigned char b, int redraw);
+```
+
+<ParamField path="idx" type="int" required>
+  Palette index to replace, 0–15.
+</ParamField>
+
+<ParamField path="r" type="unsigned char" required>
+  Red channel (0–255).
+</ParamField>
+
+<ParamField path="g" type="unsigned char" required>
+  Green channel (0–255).
+</ParamField>
+
+<ParamField path="b" type="unsigned char" required>
+  Blue channel (0–255).
+</ParamField>
+
+<ParamField path="redraw" type="int" required>
+  Pass `1` to trigger `RedrawAllImages` after the color change; `0` to defer until the next frame.
+</ParamField>
+
+```c
+/* Make CLR_RED a softer rose at runtime */
+PaletteModify(CLR_RED, 220, 100, 100, 1);
+```
+
+---
+
+## PaletteReset
+
+Frees all 16 allocated colors and re-allocates them from the built-in default palette, then redraws all images. Use this to undo any `PaletteModify` calls.
+
+```c
+void PaletteReset(void);
+```
+
+Takes no parameters and returns nothing.

@@ -1,0 +1,242 @@
+---
+title: "OpenGL Element Functions — LWXGL API"
+sidebarTitle: "OpenGL"
+description: "Reference for CreateOpenGL, ChangeGLXContext, SynchronizeOpenGL, GLConvertTGA, and GLObjectListify for embedded OpenGL rendering in LWXGL."
+---
+
+LWXGL can host one or more OpenGL viewports inside a regular X11 window. Each OpenGL element owns a GLX offscreen pixmap and a dedicated `GLXContext`. Your code renders into the pixmap by making the element's context current with `ChangeGLXContext`, issuing OpenGL commands, and then calling `SynchronizeOpenGL` before releasing the context. LWXGL composites the pixmap into the window automatically during the next frame. The display must be running at color depth 24 or 32 for GLX pixmap rendering to be available.
+
+---
+
+## CreateOpenGL
+
+```c
+int CreateOpenGL(int id, int x, int y, int w, int h, int border);
+```
+
+Creates an OpenGL element at element slot `id`. Internally, `glXChooseFBConfig` is called with a full RGBA+depth+stencil attribute set; the first matching framebuffer config whose visual depth equals the display depth is selected. A `Pixmap`, `GLXPixmap`, and `GLXContext` are created from that config.
+
+If `border >= 0`, a colored border will be drawn around the element at render time and the stored element dimensions are increased by 2 (one pixel on each side). If `border < 0`, no border is drawn and dimensions are unchanged.
+
+Returns `1` on success, `0` if no compatible GLX framebuffer config is found or the display depth is not 24 or 32.
+
+<ParamField path="id" type="int" required>
+  Element slot index. Must not already be in use.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the element in window pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the element in window pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the rendering surface in pixels (before border expansion).
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the rendering surface in pixels (before border expansion).
+</ParamField>
+
+<ParamField path="border" type="int" required>
+  `>= 0` to draw a border in that `CLR_*` color index and expand dimensions by 2; `< 0` for no border.
+</ParamField>
+
+---
+
+## ChangeGLXContext
+
+```c
+void ChangeGLXContext(int id);
+```
+
+Makes the GLX context belonging to element `id` current for OpenGL rendering by calling `glXMakeContextCurrent`. All subsequent OpenGL calls are directed to that element's offscreen pixmap until the context is released.
+
+Pass `id = -1` to release the current context (`glXMakeContextCurrent` is called with `None` drawables and a `NULL` context).
+
+<ParamField path="id" type="int" required>
+  Element slot index of an existing OpenGL element, or `-1` to release the current context.
+</ParamField>
+
+<Warning>
+  Always release the context with `ChangeGLXContext(-1)` before returning from `on_every`. Leaving a GLX context current while LWXGL renders other elements produces undefined behavior.
+</Warning>
+
+---
+
+## SynchronizeOpenGL
+
+```c
+void SynchronizeOpenGL(void);
+```
+
+Calls `glFlush()` followed by `glXWaitGL()` to ensure that all pending OpenGL commands have completed and that the offscreen pixmap reflects the latest rendered frame. Call this before `ChangeGLXContext(-1)` so LWXGL copies a complete image to the window.
+
+---
+
+## GLConvertTGA
+
+```c
+GLuint GLConvertTGA(const char* name);
+```
+
+Converts a TGA previously loaded with `AllocateTGA` or `AllocateMemoryTGA` into an OpenGL `GL_RGBA` texture. The indexed palette is expanded to RGBA per pixel. Transparent pixels (as configured in `AllocateTGA`) receive alpha `0`; all other pixels receive alpha `255`. Filtering is set to `GL_NEAREST` on both min and mag. The previously bound `GL_TEXTURE_2D` is restored after upload.
+
+Returns the `GLuint` texture ID, or `0` if the named TGA does not exist or has no palette.
+
+<ParamField path="name" type="const char*" required>
+  Key of a TGA previously loaded with `AllocateTGA` or `AllocateMemoryTGA`.
+</ParamField>
+
+<Note>
+  A valid GLX context must be current before calling `GLConvertTGA`. Call it after `ChangeGLXContext(id)` and before `SynchronizeOpenGL`. See the [TGA & XBM](/api/drawing/tga-xbm-images) page for full details on TGA loading.
+</Note>
+
+---
+
+## GLObjectListify
+
+```c
+GLuint GLObjectListify(const char* obj);
+```
+
+Parses a text-format 3D object description and compiles it into an OpenGL display list. The display list uses `GL_COMPILE` mode with `glPushAttrib(GL_CURRENT_BIT)` / `glPopAttrib()` to preserve the calling color state. Faces are rendered as `GL_QUADS` or `GL_TRIANGLES` with per-face flat color via `glColor4ub`.
+
+Returns the `GLuint` display list ID. Returns `0` on any parse error (bad format, missing fields, or out-of-range vertex indices).
+
+**Object format:**
+
+```
+COUNT <vertex_count>
+V <x> <y> <z>
+... (vertex_count lines, one per vertex)
+COUNT <face_count>
+QUAD <r> <g> <b> <v0> <v1> <v2> <v3>
+TRI  <r> <g> <b> <v0> <v1> <v2>
+... (face_count lines, each QUAD or TRI)
+```
+
+- `COUNT` appears exactly twice: first for the vertex block, then for the face block.
+- Each `V` line specifies a floating-point 3D position.
+- `QUAD` defines a four-vertex quad face; `TRI` defines a three-vertex triangle face.
+- `r`, `g`, `b` are integer color components in the range 0–255.
+- `v0`–`v3` are zero-based vertex indices into the vertex array. Indices out of range cause `GLObjectListify` to return `0`.
+
+<ParamField path="obj" type="const char*" required>
+  Null-terminated string containing the object description in the format above.
+</ParamField>
+
+<Warning>
+  Vertex and face arrays are stack-allocated with `alloca`. Objects with very large vertex or face counts may overflow the stack. For complex geometry, split the object into multiple display lists.
+</Warning>
+
+<Note>
+  A valid GLX context must be current before calling `GLObjectListify`. The returned display list ID belongs to that context and cannot be used after the context is destroyed.
+</Note>
+
+---
+
+## GetXConnection
+
+```c
+void GetXConnection(XConnectionData* data);
+```
+
+Populates `*data` with the raw X11 and GLX handles used by the LWXGL window. Useful when you need to make direct Xlib or GLX calls not covered by the LWXGL API.
+
+<ParamField path="data" type="XConnectionData*" required>
+  Pointer to a caller-allocated `XConnectionData` struct. See the Window Config page for the full struct definition, which includes `Display*`, `Window`, `GC`, `Visual*`, depth, colormap, and the 16-element `clrs` array.
+</ParamField>
+
+---
+
+## Example
+
+The following snippet shows the complete OpenGL render-loop pattern: create the element once, then per frame make the context current, render, synchronize, and release.
+
+```c
+#include "libLWXGL.h"
+#include <GL/gl.h>
+#include <math.h>
+
+#define GL_ELEM 0
+
+static GLuint wall_tex  = 0;
+static GLuint cube_list = 0;
+
+static const char cube_obj[] =
+    "COUNT 8\n"
+    "V -1.0 -1.0 -1.0\n"
+    "V  1.0 -1.0 -1.0\n"
+    "V  1.0  1.0 -1.0\n"
+    "V -1.0  1.0 -1.0\n"
+    "V -1.0 -1.0  1.0\n"
+    "V  1.0 -1.0  1.0\n"
+    "V  1.0  1.0  1.0\n"
+    "V -1.0  1.0  1.0\n"
+    "COUNT 6\n"
+    "QUAD 200  80  80  0 1 2 3\n"  /* back   */
+    "QUAD  80 200  80  4 5 6 7\n"  /* front  */
+    "QUAD  80  80 200  0 4 7 3\n"  /* left   */
+    "QUAD 200 200  80  1 5 6 2\n"  /* right  */
+    "QUAD  80 200 200  3 2 6 7\n"  /* top    */
+    "QUAD 200  80 200  0 1 5 4\n"; /* bottom */
+
+void on_every(int frame, float dt) {
+    /* Acquire the OpenGL context for this element */
+    ChangeGLXContext(GL_ELEM);
+
+    glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    /* Simple perspective */
+    float aspect = 320.0f / 240.0f;
+    glFrustum(-aspect * 0.1, aspect * 0.1, -0.1, 0.1, 0.2, 100.0);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glTranslatef(0.0f, 0.0f, -5.0f);
+    glRotatef(frame * 0.5f, 0.4f, 1.0f, 0.3f);
+
+    /* Draw the pre-compiled cube display list */
+    glCallList(cube_list);
+
+    /* Ensure all GL commands are done before LWXGL composites the pixmap */
+    SynchronizeOpenGL();
+
+    /* Release the context so LWXGL can access the pixmap */
+    ChangeGLXContext(-1);
+}
+
+int main(void) {
+    CreateWindow(640, 480, "OpenGL Demo", CLR_BLACK);
+
+    if (!CreateOpenGL(GL_ELEM, 160, 120, 320, 240, CLR_NONE)) {
+        /* GLX not available at this depth */
+        return 1;
+    }
+
+    /* Build the display list — must be done with a current context */
+    ChangeGLXContext(GL_ELEM);
+    cube_list = GLObjectListify(cube_obj);
+
+    /* Load a TGA texture while the context is current */
+    AllocateTGA("wall", "assets/wall.tga", 0, -1);
+    wall_tex = GLConvertTGA("wall");
+
+    ChangeGLXContext(-1);
+
+    MainWindowLoop(60, on_every);
+    DeleteWindow();
+    return 0;
+}
+```
+
+<Tip>
+  Compile and link with `-lLWXGL -lGL -lGLX -lX11`. Ensure your X server is running at 24-bit or 32-bit depth (`DefaultDepth`) before calling `CreateOpenGL`; the function returns `0` otherwise.
+</Tip>

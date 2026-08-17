@@ -1,0 +1,272 @@
+---
+title: "Loading TGA and XBM Images in LWXGL"
+sidebarTitle: "Images & TGA"
+description: "Load indexed TGA images (raw and RLE) and XBM bitmaps into LWXGL, draw them on canvases, use them as OpenGL textures, and capture screen regions."
+---
+
+LWXGL has a built-in allocator for indexed images. It supports **indexed-color TGA** files (types 1 and 9, 8bpp, 16-entry palette) and **XBM** monochrome bitmaps. Allocated images are stored by a string key and can be drawn onto `Image` elements, converted to OpenGL textures, or used across multiple canvases without reloading from disk.
+
+---
+
+## TGA requirements
+
+TGA files loaded by LWXGL must meet all of the following constraints — the loader returns an error code if any check fails:
+
+<CardGroup cols={2}>
+  <Card title="Image type" icon="image">
+    Type byte must be `1` (uncompressed color-mapped) or `9` (RLE color-mapped).
+  </Card>
+  <Card title="Bit depth" icon="layer-group">
+    Must be 8 bits per pixel (one palette index per pixel).
+  </Card>
+  <Card title="Palette size" icon="palette">
+    Must have exactly 16 palette entries, each 24-bit RGB.
+  </Card>
+  <Card title="Descriptor" icon="sliders">
+    Image descriptor byte must be `0` (bottom-left origin) or `32` (top-left origin). Both are handled.
+  </Card>
+</CardGroup>
+
+<Warning>
+24-bit or 32-bit TGA files are **not** supported. Export your images as 8bpp indexed-color with a 16-entry palette from your image editor before loading them with LWXGL.
+</Warning>
+
+---
+
+## AllocateTGA
+
+```c
+int AllocateTGA(const char* name, const char* path,
+                int change_palette, int transparent);
+```
+
+Loads a TGA from disk and registers it under `name`.
+
+| Parameter | Description |
+|---|---|
+| `name` | String key used to reference the TGA later. |
+| `path` | File path on disk. |
+| `change_palette` | `1` — apply the TGA's 16-entry RGB palette to the global palette when the TGA is drawn. `0` — keep the current palette. |
+| `transparent` | Color index (0–15) to treat as transparent when drawing. Pass `-1` for no transparency. |
+
+**Return values:**
+
+| Value | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | File not found or could not be opened. |
+| `2` | File does not meet the indexed-TGA format requirements. |
+
+If a TGA with the same `name` already exists, it is freed before the new one is loaded.
+
+```c
+if (AllocateTGA("player", "assets/player.tga", 1, 0) != 0) {
+    fprintf(stderr, "Failed to load player.tga\n");
+}
+```
+
+---
+
+## AllocateMemoryTGA
+
+```c
+int AllocateMemoryTGA(const char* name, const char* buffer,
+                      int size, int change_palette, int transparent);
+```
+
+Same as `AllocateTGA`, but loads from a byte buffer already in memory rather than a file path. Internally the buffer is written to an anonymous `memfd` and the loader reads it via `/proc/self/fd/<fd>`. Return values are identical to `AllocateTGA`.
+
+```c
+extern unsigned char embedded_tga[];
+extern int embedded_tga_size;
+
+AllocateMemoryTGA("hud", (const char*)embedded_tga,
+                  embedded_tga_size, 0, -1);
+```
+
+---
+
+## DrawIndexedTGA
+
+```c
+void DrawIndexedTGA(int id, int x, int y, const char* name);
+```
+
+Copies a previously allocated TGA's pixel data into `Image` element `id` at canvas offset `(x, y)`. Pixels that would fall outside the image bounds are clipped. If the TGA was allocated with `change_palette = 1`, the global palette is updated before the pixels are copied.
+
+The transparent color index set during `AllocateTGA` is respected — those pixels are skipped and the underlying canvas is left unchanged.
+
+```c
+// Draw the TGA at canvas origin
+DrawIndexedTGA(5, 0, 0, "player");
+UpdateImage(5);
+```
+
+---
+
+## CreateTGAImage
+
+```c
+int CreateTGAImage(int id, int x, int y,
+                   const char* path, int change_palette);
+```
+
+Convenience wrapper that calls `AllocateTGA` (with `transparent = -1`) and immediately creates a correctly-sized `Image` element, draws the TGA into it, and calls `UpdateImage`. The internal allocation key is `"TGAImage_" + path`, so calling `CreateTGAImage` twice with the same path reuses the cached allocation.
+
+Returns `0` on success, or a non-zero `AllocateTGA` error code on failure.
+
+```c
+// One call to load, create element, and display
+if (CreateTGAImage(3, 50, 50, "assets/background.tga", 1) != 0) {
+    fprintf(stderr, "Could not create TGA image\n");
+}
+```
+
+---
+
+## DeleteTGA
+
+```c
+void DeleteTGA(const char* name);
+```
+
+Frees the pixel and palette buffers for the named TGA and removes it from the allocator map. Safe to call on a name that was never allocated (no-op). Does not affect any `Image` elements that were already drawn from the TGA.
+
+```c
+DeleteTGA("player");
+```
+
+---
+
+## XBM support
+
+XBM is a monochrome bitmap format. LWXGL reads it via `XReadBitmapFileData` and converts each 1-bit pixel to a palette color index.
+
+### AllocateXBM
+
+```c
+int AllocateXBM(const char* name, const char* path,
+                int colors, int transparent);
+```
+
+Loads an XBM file. The `colors` parameter packs two palette indices into one `int`:
+
+- **Upper nibble** (`colors >> 4`): color index for `1` bits.
+- **Lower nibble** (`colors & 0xF`): color index for `0` bits.
+
+`transparent` controls which logical pixel value is treated as transparent:
+- `1` → the "1-bit" color is transparent.
+- `0` → the "0-bit" color is transparent.
+- Any other value → no transparency.
+
+Returns `1` on success, `0` on failure (file not found or XBM parse error).
+
+```c
+// 1-bits → CLR_WHITE (0xF), 0-bits → CLR_BLACK (0x0), no transparency
+AllocateXBM("icon", "assets/icon.xbm", 0xF0, -1);
+```
+
+### CreateXBMImage
+
+```c
+int CreateXBMImage(int id, int x, int y,
+                   const char* path, int colors);
+```
+
+Convenience wrapper — allocates the XBM, creates a sized `Image` element, draws it, and calls `UpdateImage`. The internal key is `"XBMImage_" + path`. Returns `1` on success, `0` on failure.
+
+```c
+CreateXBMImage(7, 100, 100, "assets/cursor.xbm", 0xF0);
+```
+
+---
+
+## CaptureRegion
+
+```c
+unsigned char* CaptureRegion(int x, int y,
+                              unsigned short w, unsigned short h);
+```
+
+Reads a rectangular region from the window back-buffer using `XGetImage` and encodes it as a valid indexed TGA file. Each captured pixel is matched against the 16 currently-active palette colors to find the nearest palette index.
+
+The return value is a heap-allocated buffer of `66 + w * h` bytes (18-byte TGA header + 48-byte palette + pixel data). **The caller is responsible for freeing this buffer.**
+
+```c
+unsigned char *shot = CaptureRegion(0, 0, 320, 240);
+if (shot) {
+    FILE *f = fopen("screenshot.tga", "wb");
+    fwrite(shot, 1, 66 + 320 * 240, f);
+    fclose(f);
+    free(shot);
+}
+```
+
+<Note>
+`CaptureRegion` reads from the back-buffer, so it captures exactly what was rendered in the most recent frame including all immediate-mode draws.
+</Note>
+
+---
+
+## GLConvertTGA
+
+```c
+GLuint GLConvertTGA(const char* name);
+```
+
+Converts an already-allocated TGA to an OpenGL RGBA texture. The palette is used to expand each index to a full 32-bit RGBA value. The transparent color index (if any) maps to `alpha = 0`; all other pixels get `alpha = 255`. The texture uses `GL_NEAREST` filtering and `GL_REPEAT` wrapping. Returns a `GLuint` texture ID, or `0` if the name is not found or the TGA has no palette (e.g. XBM allocations).
+
+The call must be made with an active GLX context (see the [OpenGL guide](/guides/opengl-integration)).
+
+```c
+ChangeGLXContext(glid);
+
+AllocateTGA("sprite", "assets/sprite.tga", 0, 0);
+GLuint tex = GLConvertTGA("sprite");
+
+glBindTexture(GL_TEXTURE_2D, tex);
+// ... render textured quad ...
+
+SynchronizeOpenGL();
+ChangeGLXContext(-1);
+```
+
+---
+
+## Full workflow example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+void on_frame(int tick, float dt) {
+    // Nothing needed here — TGA image element redraws itself
+    (void)tick; (void)dt;
+}
+
+int main(void) {
+    CreateWindow(640, 480, "TGA Demo", CLR_BLACK);
+
+    // Load and display a TGA as a standalone image element
+    if (CreateTGAImage(1, 10, 10, "assets/title.tga", 1) != 0) {
+        fprintf(stderr, "title.tga failed to load\n");
+        return 1;
+    }
+
+    // Load a second TGA for manual blitting onto a canvas
+    AllocateTGA("overlay", "assets/overlay.tga", 0, CLR_BLACK);
+
+    // Create a blank canvas and draw both onto it
+    CreateImage(2, 10, 200, 300, 150);
+    ClearImage(2, CLR_GRAY);
+    DrawIndexedTGA(2, 0, 0, "overlay");
+    UpdateImage(2);
+
+    // Load a monochrome icon
+    CreateXBMImage(3, 400, 10, "assets/icon.xbm", 0xF0);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```

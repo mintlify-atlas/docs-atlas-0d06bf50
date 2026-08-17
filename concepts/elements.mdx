@@ -1,0 +1,187 @@
+---
+title: "UI Elements: IDs, Types, and the Element System"
+sidebarTitle: "Elements"
+description: "LWXGL elements are UI components identified by integer IDs. Learn how element types, bounds, visibility, and z-order work in the element array."
+---
+
+Elements are LWXGL's UI primitives — buttons, text labels, input fields, images, and more. Each element is identified by a non-negative integer ID you assign at creation time. All live elements are stored in a global vector indexed by that ID, and the renderer visits the entire vector every frame, drawing every visible element in ID order.
+
+## Element Types
+
+Every element has a numeric type that determines how it is rendered and which type-specific data structure it carries.
+
+| Type | Name | Creation Function(s) |
+|---|---|---|
+| `0` | Text | `CreateText`, `CreateCopiedText` |
+| `1` | Button | `CreateButton` |
+| `2` | Input | `CreateInput` |
+| `3` | Rect | `CreateRect` |
+| `4` | Image / Canvas | `CreateImage` |
+| `5` | Checkbox | `CreateCheckbox` |
+| `6` | Console | `CreateConsole` |
+| `7` | Ellipse | `CreateEllipse` |
+| `8` | OpenGL | `CreateOpenGL` |
+
+<CardGroup cols={2}>
+  <Card title="Text" icon="font">
+    Renders a string at a fixed position. `CreateText` keeps a pointer to the original string literal; `CreateCopiedText` calls `strdup` so the string can be stack-allocated.
+  </Card>
+  <Card title="Button" icon="square-cursor">
+    Clickable rectangle with three packed color states: unpressed, hover, and pressed. Fires an `onclick` callback on left-button release.
+  </Card>
+  <Card title="Input" icon="keyboard">
+    Single-line text field. Captures keystrokes while the mouse is over it. Read with `GetInput(id)`.
+  </Card>
+  <Card title="Image / Canvas" icon="image">
+    Raw pixel canvas backed by an `XImage`. Draw into it with `PrimitiveRect`, `PrimitiveLine`, `PrimitiveCircle`, etc., then call `UpdateImage` to push changes to the screen.
+  </Card>
+  <Card title="Console" icon="terminal">
+    Scrollable text console. Append with `ConsolePrint(id, fmt, ...)`, clear with `ConsoleClear(id)`. Scrolls with the mouse wheel when hovered.
+  </Card>
+  <Card title="OpenGL" icon="cube">
+    Embeds a GLX-backed OpenGL surface in the window. Switch context with `ChangeGLXContext(id)` and sync with `SynchronizeOpenGL`.
+  </Card>
+</CardGroup>
+
+## Element IDs
+
+IDs are plain non-negative `int` values. The global element vector is grown to `id + 1` automatically, so:
+
+- If you create an element at ID `0` and another at ID `100`, the vector will be 101 entries long with 99 `NULL` slots in between. Those gaps consume pointer-sized heap entries but no other resources.
+- If an element already exists at a given ID, it is **automatically deleted** before the new one is installed — no need to call `DeleteElement` first.
+
+```c
+CreateButton(0, 10, 10, 120, 30, 0xF1, 0x71, 0x11, "Save",   on_save);
+CreateButton(1, 10, 50, 120, 30, 0xF1, 0x71, 0x11, "Cancel", on_cancel);
+
+// Replace the Save button with a new label — old button is freed automatically
+CreateText(0, 10, 10, "Saved!", CLR_LGREEN);
+```
+
+<Tip>
+Keep IDs contiguous (0, 1, 2 …) to avoid wasted vector slots and to make iteration predictable.
+</Tip>
+
+## The Element Struct
+
+Every element, regardless of type, shares the same base struct:
+
+```c
+typedef struct {
+    int   x, y;       // top-left position in the backing-store coordinate space
+    int   w, h;       // width and height in pixels
+    int   v;          // visibility flag: 1 = visible, 0 = hidden
+    int   type;       // element type (0–8)
+    void *elem;       // pointer to type-specific data (ButtonElement, TextElement, …)
+    char *tooltip;    // NULL, or a heap-allocated tooltip string
+} Element;
+```
+
+You can retrieve the raw struct pointer with `GetElement(id)` to read or patch fields directly, but prefer the dedicated API functions when they exist.
+
+## Bounds and Visibility
+
+```c
+void ElemModifyBounds(int id, int x, int y, int w, int h);
+```
+
+Repositions and optionally resizes an element. Pass `-1` for `w` or `h` to leave that dimension unchanged:
+
+```c
+// Move button to (200, 50), keep its existing size
+ElemModifyBounds(0, 200, 50, -1, -1);
+
+// Move and resize at the same time
+ElemModifyBounds(1, 10, 100, 200, 40);
+```
+
+```c
+void ElemSetVisible(int id, int visible);
+```
+
+Pass `1` to show or `0` to hide. Hidden elements are skipped by the renderer and by mouse hit-testing.
+
+```c
+// Hide a loading indicator once data is ready
+ElemSetVisible(5, 0);
+```
+
+### Mouse Hit-Testing
+
+```c
+int ElemInside(int id);  // returns 1 if the mouse cursor is over this element
+```
+
+`ElemInside` accounts for z-order: if a higher-ID element overlaps the element being tested and the mouse is over the overlap area, `ElemInside` returns `0` for the lower-ID element. A modal dialog being open also makes `ElemInside` return `0` for all elements.
+
+## Z-Order
+
+Elements are rendered in ascending ID order — ID `0` is drawn first (bottom), the highest ID is drawn last (top). Mouse hit-testing follows the same rule: when two elements overlap, the one with the **higher ID** captures hover and click events.
+
+```c
+CreateRect(0,  0,  0, 400, 300, CLR_NONE, CLR_LGRAY);  // background panel — drawn first
+CreateButton(10, 20, 20, 80, 28, 0xF1, 0x71, 0x11, "OK", on_ok);  // on top of panel
+```
+
+<Note>
+There is no explicit `z-index` property. To change the stacking order of two elements, recreate them with swapped IDs.
+</Note>
+
+## Deleting Elements
+
+```c
+void DeleteElement(int id);
+```
+
+Frees all memory associated with the element — the type-specific struct, any `XImage` pixmap (for Image elements), the GLX context (for OpenGL elements), and the tooltip string. The vector slot is set to `NULL`. Accessing the ID after deletion without creating a new element at that ID is undefined behavior.
+
+## Tooltips
+
+```c
+void SetTooltip(int id, const char* tooltip);
+```
+
+Attaches a text tooltip to any element. While the mouse hovers over the element, the tooltip string is displayed at the bottom of the window. Pass `NULL` to remove a previously set tooltip.
+
+```c
+CreateButton(2, 10, 90, 28, 28, 0xF8, 0x78, 0x88, "?", on_help);
+SetTooltip(2, "Open the help documentation");
+
+// Remove it later
+SetTooltip(2, NULL);
+```
+
+## Code Example
+
+```c
+#include "libLWXGL.h"
+
+static void on_submit(void) {
+    char* text = GetInput(1);
+    /* do something with text */
+    ElemSetVisible(2, 1);           // show confirmation label
+    ElemSetVisible(3, 0);           // hide submit button
+}
+
+int main(void) {
+    if (CreateWindow(480, 200, "Form", CLR_BLACK) != 0) return 1;
+
+    // ID 0: static label above the input
+    CreateText(0, 10, 12, "Enter your name:", CLR_WHITE);
+
+    // ID 1: input field, 20 chars max
+    CreateInput(1, 10, 30, 200, 24, 0x87, 0xF7, 20);
+
+    // ID 2: confirmation label, initially hidden
+    CreateText(2, 10, 65, "Submitted!", CLR_LGREEN);
+    ElemSetVisible(2, 0);
+
+    // ID 3: submit button on top of everything
+    CreateButton(3, 220, 30, 80, 24, 0xF2, 0xA2, 0x22, "Submit", on_submit);
+    SetTooltip(3, "Send the form");
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```

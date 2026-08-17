@@ -1,0 +1,178 @@
+---
+title: "Rect, Ellipse, and Checkbox Elements — LWXGL"
+sidebarTitle: "Shapes & Checkboxes"
+description: "Reference for CreateRect, CreateEllipse, and CreateCheckbox elements in LWXGL. Display filled shapes and toggle checkboxes with labels."
+---
+
+Rects, ellipses, and checkboxes are persistent UI elements managed by the element system — they are positioned, shown/hidden, and deleted through the standard element API. Rects and ellipses are purely visual; checkboxes add interactive toggle state that you query with `GetCheckbox`. Shape colors are specified as separate `fg` (border/outline) and `bg` (fill) color indices, while checkboxes use the packed nibble format shared by buttons and inputs.
+
+---
+
+## CreateRect
+
+```c
+void CreateRect(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+Creates a rectangle element. The border and fill are drawn independently: pass `CLR_NONE` for either to suppress that part of the rendering. This is a persistent element registered in the element list, unlike `PrimitiveRect`, which operates directly on an image element's raster canvas.
+
+<ParamField path="id" type="int" required>
+  Unique element ID. Any existing element at this ID is deleted first.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge position in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge position in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Border color index (`CLR_*`). Pass `CLR_NONE` to draw no border.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color index (`CLR_*`). Pass `CLR_NONE` to draw no fill (transparent interior).
+</ParamField>
+
+<Note>
+  `CreateRect` creates a managed element; `PrimitiveRect` paints directly onto an image element's pixel buffer. Use the primitive variant for canvas-style drawing and `CreateRect` when you need to move, hide, or delete the shape through the element API.
+</Note>
+
+---
+
+## CreateEllipse
+
+```c
+void CreateEllipse(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+Creates an ellipse element. The ellipse is fitted inside the bounding box defined by `(x, y, w, h)`. Equal `w` and `h` values produce a circle. As with `CreateRect`, either color may be `CLR_NONE`.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the bounding box in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the bounding box in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the bounding box in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the bounding box in pixels. Set equal to `w` for a circle.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Outline color index (`CLR_*`). Pass `CLR_NONE` for no outline.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color index (`CLR_*`). Pass `CLR_NONE` for no fill.
+</ParamField>
+
+---
+
+## CreateCheckbox
+
+```c
+void CreateCheckbox(int id, int x, int y, int size, int cb_col, const char* label);
+```
+
+Creates a checkbox element. The checkbox is rendered as a square of `size × size` pixels; when checked, a smaller filled square is drawn inset by 4 pixels on each side. An optional text label appears to the right, 5 pixels from the checkbox's right edge. Clicking the checkbox toggles its checked state.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  Left edge of the checkbox square in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top edge of the checkbox square in pixels.
+</ParamField>
+
+<ParamField path="size" type="int" required>
+  Width and height of the checkbox square in pixels.
+</ParamField>
+
+<ParamField path="cb_col" type="int" required>
+  Packed color for the checkbox. Upper nibble = border color, lower nibble = fill color. The upper nibble is also used as the label text color.
+</ParamField>
+
+<ParamField path="label" type="const char*" required>
+  Optional text displayed to the right of the checkbox. Pass `NULL` for no label. The pointer is stored directly — **not copied** — and must remain valid for the element's lifetime.
+</ParamField>
+
+<Note>
+  The hit area for `ElemInside` extends rightward to cover the label text: `x + size + 10 + strlen(label) * 9` pixels total. Keep this in mind when placing overlapping elements.
+</Note>
+
+---
+
+## GetCheckbox
+
+```c
+int GetCheckbox(int id);
+```
+
+Returns the current checked state of a checkbox element.
+
+<ParamField path="id" type="int" required>
+  ID of an existing checkbox element.
+</ParamField>
+
+Returns `1` if the checkbox is currently checked, `0` if unchecked.
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+
+static const char *lbl_agree = "I agree to the terms";
+static const char *lbl_news  = "Subscribe to newsletter";
+
+void setup(void) {
+    // Solid dark background panel.
+    CreateRect(0, 10, 10, 300, 180, CLR_GRAY, CLR_BLACK);
+
+    // Decorative circle indicator — outline only, no fill.
+    CreateEllipse(1, 15, 15, 20, 20, CLR_CYAN, CLR_NONE);
+
+    // Filled circle badge.
+    CreateEllipse(2, 260, 15, 40, 40, CLR_NONE, CLR_LGREEN);
+
+    // Checkbox: 14×14, white border + black fill (0xF0), with label.
+    CreateCheckbox(3, 20, 60, 14, 0xF0, lbl_agree);
+    CreateCheckbox(4, 20, 84, 14, 0xF0, lbl_news);
+}
+
+void on_submit(void) {
+    int agreed    = GetCheckbox(3);
+    int subscribe = GetCheckbox(4);
+    if (!agreed) {
+        // prompt user
+        return;
+    }
+    // proceed with subscribe flag
+    (void)subscribe;
+}
+```

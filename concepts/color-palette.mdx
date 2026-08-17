@@ -1,0 +1,142 @@
+---
+title: "The LWXGL 16-Color Indexed Palette"
+sidebarTitle: "Color Palette"
+description: "LWXGL uses a fixed 16-color indexed palette. Learn color constants, the packed color encoding, and how to modify palette colors at runtime."
+---
+
+LWXGL renders everything through a 16-color indexed palette, similar to the classic CGA/EGA color model. Every color in the UI is referenced by an index from `0` to `15`. This keeps the API surface small and makes global color theme changes trivial — modify one palette entry and every element using that index updates instantly.
+
+## Color Constants
+
+The header defines a symbolic constant for each palette index.
+
+| Constant | Value | Default Color |
+|---|---|---|
+| `CLR_BLACK` | `0x0` | Black |
+| `CLR_BLUE` | `0x1` | Dark Blue |
+| `CLR_GREEN` | `0x2` | Dark Green |
+| `CLR_CYAN` | `0x3` | Dark Cyan |
+| `CLR_RED` | `0x4` | Dark Red |
+| `CLR_MAGENTA` | `0x5` | Dark Magenta |
+| `CLR_ORANGE` | `0x6` | Orange |
+| `CLR_LGRAY` | `0x7` | Light Gray |
+| `CLR_GRAY` | `0x8` | Dark Gray |
+| `CLR_LBLUE` | `0x9` | Light Blue |
+| `CLR_LGREEN` | `0xA` | Light Green |
+| `CLR_LCYAN` | `0xB` | Light Cyan |
+| `CLR_LRED` | `0xC` | Light Red |
+| `CLR_LMAGENTA` | `0xD` | Light Magenta |
+| `CLR_YELLOW` | `0xE` | Yellow |
+| `CLR_WHITE` | `0xF` | White |
+
+`CLR_NONE` is defined as `-1`. Passing `CLR_NONE` as a foreground or background color to drawing functions means "no border" or "no fill" — the corresponding part is skipped.
+
+```c
+// Filled rectangle with no visible border
+CreateRect(0, 10, 10, 200, 100, CLR_NONE, CLR_BLUE);
+
+// Outlined rectangle with no fill (transparent interior)
+CreateRect(1, 10, 10, 200, 100, CLR_WHITE, CLR_NONE);
+```
+
+## Packed Color Encoding
+
+Many element-creation functions accept a **packed color** `int` that encodes two palette indices in a single byte. The lower nibble (bits 0–3) carries one color, and the upper nibble (bits 4–7) carries another.
+
+```
+packed = (upper << 4) | lower
+```
+
+For example, `0xF1` packs white (`0xF`) into the upper nibble and dark blue (`0x1`) into the lower nibble.
+
+The meaning of upper and lower depends on the function:
+
+| Function | Upper nibble | Lower nibble |
+|---|---|---|
+| `CreateButton` (unpressed `u`) | Border / text color | Fill color |
+| `CreateInput` (inactive `u`) | Border color | Fill color |
+| `CreateCheckbox` (`cb_col`) | Label text color | Checkbox fill color |
+
+```c
+// Button: white text/border (0xF), dark blue fill (0x1)
+// Hover:  white text/border (0xF), gray fill (0x7)
+// Pressed: white text/border (0xF), black fill (0x0)
+CreateButton(0, 10, 10, 120, 30, 0xF1, 0xF7, 0xF0, "Connect", on_connect);
+```
+
+<Tip>
+The macros `L(b)` and `H(b)` are defined internally to extract lower and upper nibbles. You can write your own color packing helper to keep call sites readable:
+
+```c
+#define PACK(hi, lo) (((hi) << 4) | (lo))
+
+CreateButton(0, 10, 10, 100, 28,
+    PACK(CLR_WHITE, CLR_BLUE),
+    PACK(CLR_WHITE, CLR_LBLUE),
+    PACK(CLR_WHITE, CLR_GRAY),
+    "OK", on_ok);
+```
+</Tip>
+
+## Default Palette RGB Values
+
+The following table lists the default RGB values loaded at startup from the internal `color_palette` array in `src/main.cc`.
+
+| Index | Constant | R | G | B |
+|---|---|---|---|---|
+| 0 | `CLR_BLACK` | 0 | 0 | 0 |
+| 1 | `CLR_BLUE` | 3 | 3 | 173 |
+| 2 | `CLR_GREEN` | 0 | 170 | 0 |
+| 3 | `CLR_CYAN` | 0 | 168 | 168 |
+| 4 | `CLR_RED` | 186 | 6 | 6 |
+| 5 | `CLR_MAGENTA` | 168 | 0 | 168 |
+| 6 | `CLR_ORANGE` | 230 | 126 | 34 |
+| 7 | `CLR_LGRAY` | 168 | 168 | 168 |
+| 8 | `CLR_GRAY` | 85 | 87 | 83 |
+| 9 | `CLR_LBLUE` | 87 | 87 | 255 |
+| 10 | `CLR_LGREEN` | 85 | 255 | 85 |
+| 11 | `CLR_LCYAN` | 96 | 240 | 240 |
+| 12 | `CLR_LRED` | 255 | 85 | 85 |
+| 13 | `CLR_LMAGENTA` | 240 | 84 | 240 |
+| 14 | `CLR_YELLOW` | 244 | 242 | 54 |
+| 15 | `CLR_WHITE` | 255 | 255 | 255 |
+
+## Runtime Palette Modification
+
+You can replace any palette color after `CreateWindow` returns without recreating elements.
+
+```c
+// Read the current RGB value of a palette index
+void PaletteQuery(int idx, unsigned char* r, unsigned char* g, unsigned char* b);
+
+// Replace a palette index with a new RGB value
+void PaletteModify(int idx, unsigned char r, unsigned char g, unsigned char b, int redraw);
+
+// Restore all 16 entries to the defaults shown in the table above
+void PaletteReset(void);
+```
+
+| Parameter | Description |
+|---|---|
+| `idx` | Palette index to query or modify (0–15) |
+| `r, g, b` | 8-bit RGB channel values (0–255) |
+| `redraw` | Pass `1` to immediately trigger `RedrawAllImages` so Image canvases repaint with the new color; pass `0` to defer |
+
+<Warning>
+`PaletteModify` modifies the X11 colormap entry shared by **all** elements at that index. Every button, rect, text, and image using index `idx` will reflect the change on the next frame. This is powerful for theming but can produce surprising results if multiple unrelated elements share the same color index.
+</Warning>
+
+```c
+// Darken the orange accent color and force all image canvases to repaint
+PaletteModify(CLR_ORANGE, 180, 80, 10, 1);
+
+// Read back what the server resolved it to
+unsigned char r, g, b;
+PaletteQuery(CLR_ORANGE, &r, &g, &b);
+printf("Orange is now rgb(%u, %u, %u)\n", r, g, b);
+
+// Undo everything
+PaletteReset();
+```
+
+`PaletteReset` always calls `RedrawAllImages` internally, so there is no separate `redraw` parameter.
